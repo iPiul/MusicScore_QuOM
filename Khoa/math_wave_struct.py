@@ -85,7 +85,8 @@ class Synthesizer:
 
 class Score:
     """
-    Represents a collection of notes and handles file creation.
+    Represents a collection of notes, handles file creation, 
+    and interprets string melodies.
     """
     def __init__(self, name="output.wav"):
         self.notes = []
@@ -95,19 +96,37 @@ class Score:
     def add_note(self, note: Note):
         self.notes.append(note)
 
+    def play_melody(self, melody_string):
+        """
+        Parses a string of notes and adds them to the score.
+        Format: "NoteName:Duration NoteName:Duration"
+        Example: "C4:0.5 D4:0.5 E4:1.0"
+        """
+        # 1. Split the string by spaces to get individual note tokens
+        # "C4:0.5 D4:0.5" -> ["C4:0.5", "D4:0.5"]
+        tokens = melody_string.split()
+
+        for token in tokens:
+            # 2. Split each token by the colon
+            parts = token.split(':')
+            
+            # Extract name and duration
+            note_name = parts[0]
+            duration = float(parts[1]) # Convert string "0.5" to float 0.5
+            
+            # 3. Convert name to Frequency using our Note helper
+            freq = Note.get_freq(note_name)
+            
+            # 4. Create the Note object and add it
+            new_note = Note(freq, duration)
+            self.add_note(new_note)
+
     def save_to_wav(self):
         """Compiles all notes and writes to a WAV file."""
         print(f"Generating sound data for {len(self.notes)} notes...")
-        
-        # Open a wave file for writing
-        # 'w' - write mode
         wav_file = wave.open(self.name, 'w')
-        
-        # Set parameters: (nchannels, sampwidth, framerate, nframes, comptype, compname)
-        # 1 channel (mono), 2 bytes (16-bit), 44100 Hz sample rate
         wav_file.setparams((1, 2, 44100, 0, 'NONE', 'not compressed'))
 
-        # Generate and write each note sequentially
         for note in self.notes:
             raw_data = self.synth.generate_wave(note)
             wav_file.writeframes(raw_data)
@@ -118,26 +137,19 @@ class Score:
 # --- implementation Instructions ---
 
 if __name__ == "__main__":
-    # 1. Create a Score
-    my_song = Score("scale.wav")
+    # 1. Create the Score
+    my_song = Score("twinkle.wav")
 
-    # 2. Define a melody using Note Names
-    # We use Note.get_freq() to convert the name to a number on the fly
-    melody_names = [
-        ("C4", 0.5), 
-        ("D4", 0.5), 
-        ("E4", 0.5), 
-        ("F4", 0.5), 
-        ("G4", 0.5), 
-        ("A4", 0.5), 
-        ("B4", 0.5), 
-        ("C5", 1.0) # High C
-    ]
+    # 2. Define the melody as a string
+    # Format: Note:Duration
+    # C4:0.5 means "Play C4 for half a second"
+    twinkle_melody = (
+        "C4:0.5 C4:0.5 G4:0.5 G4:0.5 A4:0.5 A4:0.5 G4:1.0 "
+        "F4:0.5 F4:0.5 E4:0.5 E4:0.5 D4:0.5 D4:0.5 C4:1.0"
+    )
 
-    # 3. Add notes to the score
-    for name, duration in melody_names:
-        freq = Note.get_freq(name)
-        my_song.add_note(Note(freq, duration))
+    # 3. Parse and Play
+    my_song.play_melody(twinkle_melody)
 
-    # 4. Save the file
+    # 4. Save
     my_song.save_to_wav()
