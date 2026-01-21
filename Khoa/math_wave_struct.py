@@ -11,6 +11,50 @@ class Note:
         self.duration = duration    # In Seconds
         self.amplitude = amplitude  # 0.0 to 1.0 (Volume)
 
+    @staticmethod
+    def get_freq(name):
+        """
+        Converts a note name (e.g., 'A4', 'C#5', 'Bb3') to frequency in Hz.
+        Reference: A4 = 440Hz
+        """
+        if name == 'REST':
+            return 0.0
+            
+        # 1. Define the order of notes in an octave
+        # We map note names to their semitone index (C is 0, B is 11)
+        semitones = {
+            'C': 0, 'C#': 1, 'Db': 1, 
+            'D': 2, 'D#': 3, 'Eb': 3, 
+            'E': 4, 
+            'F': 5, 'F#': 6, 'Gb': 6, 
+            'G': 7, 'G#': 8, 'Ab': 8, 
+            'A': 9, 'A#': 10, 'Bb': 10, 
+            'B': 11
+        }
+
+        # 2. Parse the string (separate Letter/Accidental from Octave)
+        # Example: "C#4" -> note_str="C#", octave=4
+        if len(name) == 3:
+            note_str = name[0:2] # e.g. "C#"
+            octave = int(name[2])
+        else:
+            note_str = name[0]   # e.g. "C"
+            octave = int(name[1])
+
+        # 3. Calculate distance from A4
+        # A4 is at index 9 in octave 4.
+        
+        # Calculate absolute semitone number (C0 = 0)
+        absolute_semitone = (octave * 12) + semitones[note_str]
+        
+        # Calculate semitones relative to A4 (A4 is note 57 in absolute terms)
+        # A4 = (4 * 12) + 9 = 57
+        n = absolute_semitone - 57
+        
+        # 4. Apply the formula
+        frequency = 440 * (2 ** (n / 12))
+        return frequency
+
 class Synthesizer:
     """
     Responsible for turning Note data into raw audio bytes.
@@ -75,20 +119,25 @@ class Score:
 
 if __name__ == "__main__":
     # 1. Create a Score
-    my_song = Score("my_music.wav")
+    my_song = Score("scale.wav")
 
-    # 2. Define some frequencies (Notes)
-    # C4 = 261.63 Hz, E4 = 329.63 Hz, G4 = 392.00 Hz
-    c_major_triad = [
-        Note(261.63, 0.5), # C4 for 0.5 seconds
-        Note(329.63, 0.5), # E4
-        Note(392.00, 0.5), # G4
-        Note(523.25, 1.0)  # C5 (High C) for 1 second
+    # 2. Define a melody using Note Names
+    # We use Note.get_freq() to convert the name to a number on the fly
+    melody_names = [
+        ("C4", 0.5), 
+        ("D4", 0.5), 
+        ("E4", 0.5), 
+        ("F4", 0.5), 
+        ("G4", 0.5), 
+        ("A4", 0.5), 
+        ("B4", 0.5), 
+        ("C5", 1.0) # High C
     ]
 
     # 3. Add notes to the score
-    for note in c_major_triad:
-        my_song.add_note(note)
+    for name, duration in melody_names:
+        freq = Note.get_freq(name)
+        my_song.add_note(Note(freq, duration))
 
     # 4. Save the file
     my_song.save_to_wav()
