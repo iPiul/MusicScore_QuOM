@@ -33,6 +33,50 @@ class Note:
         """Converts MIDI note number (0-127) to Hz."""
         return 440.0 * (2 ** ((midi_number - 69) / 12))
 
+class AudioEffect:
+    """Base class for all effects."""
+    def apply(self, buffer, sample_rate):
+        raise NotImplementedError("Subclasses must implement apply()")
+
+class DelayEffect(AudioEffect):
+    """Adds an echo to the sound."""
+    def __init__(self, delay_seconds=0.5, decay=0.5):
+        self.delay_seconds = delay_seconds
+        self.decay = decay  # How much quieter is the echo? (0.5 = 50%)
+
+    def apply(self, buffer, sample_rate):
+        print("Applying Delay Effect...")
+        delay_samples = int(self.delay_seconds * sample_rate)
+        
+        # We iterate backwards so we don't read data we just wrote
+        # Or simpler: create a copy of the original sound to read from
+        original_audio = list(buffer) # Copy buffer
+        
+        for i in range(len(buffer)):
+            if i >= delay_samples:
+                # New Sound = Current Sound + (Old Sound * decay)
+                delayed_sample = original_audio[i - delay_samples]
+                buffer[i] += delayed_sample * self.decay
+
+class DistortionEffect(AudioEffect):
+    """Makes the sound 'crunchy' (Hard Clipping)."""
+    def __init__(self, drive=0.5):
+        self.drive = drive # 0.0 to 1.0
+
+    def apply(self, buffer, sample_rate):
+        print("Applying Distortion...")
+        threshold = 1.0 - self.drive
+        for i in range(len(buffer)):
+            # Hard clip the signal
+            if buffer[i] > threshold:
+                buffer[i] = threshold
+            elif buffer[i] < -threshold:
+                buffer[i] = -threshold
+            
+            # Boost volume to compensate for clipping
+            buffer[i] /= threshold
+
+
 class Synthesizer:
     """
     The Audio Engine. 
@@ -41,6 +85,10 @@ class Synthesizer:
     def __init__(self, sample_rate=44100, oscillator="sine"):
         self.sample_rate = sample_rate
         self.oscillator = oscillator  # Options: "sine", "square", "saw"
+        self.effects = []  # New: A list to hold our pedals!
+
+    def add_effect(self, effect: AudioEffect):
+        self.effects.append(effect)
 
     def render_track(self, notes):
         if not notes: return b''
@@ -49,12 +97,17 @@ class Synthesizer:
         total_seconds = last_note.start_time + last_note.duration + 0.5
         total_samples = int(total_seconds * self.sample_rate)
         
-        print(f"Mixing {len(notes)} notes (Instrument: {self.oscillator})...")
+#       1. Mix the notes (Paint the canvas)
+        print(f"Mixing {len(notes)} notes...")
         mix_buffer = [0.0] * total_samples
-
         for note in notes:
             self._mix_note(mix_buffer, note)
 
+        # 2. !! NEW !! Apply Effects Chain
+        for effect in self.effects:
+            effect.apply(mix_buffer, self.sample_rate)
+
+        # 3. Convert to Bytes
         return self._buffer_to_bytes(mix_buffer)
 
     def _mix_note(self, buffer, note):
@@ -109,6 +162,7 @@ class Synthesizer:
             sample = max(min(sample, 1.0), -1.0)
             audio_bytes.extend(struct.pack('<h', int(sample * 32767)))
         return audio_bytes
+
 
 class Score:
     def __init__(self, name="output.wav"):
