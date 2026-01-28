@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from midi_parser import extract_midi_data
+from play_midi import extract_midi_data
 
 
 class MidiToWavGUI:
