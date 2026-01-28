@@ -35,55 +35,77 @@ class Note:
 
 class Synthesizer:
     """
-    The Audio Engine. Renders a list of Notes into a mixed waveform.
+    The Audio Engine. 
+    Now supports multiple waveforms (Sine, Square, Sawtooth).
     """
-    def __init__(self, sample_rate=44100):
+    def __init__(self, sample_rate=44100, oscillator="sine"):
         self.sample_rate = sample_rate
+        self.oscillator = oscillator  # Options: "sine", "square", "saw"
 
     def render_track(self, notes):
         if not notes: return b''
         
-        # 1. Determine total length
         last_note = max(notes, key=lambda n: n.start_time + n.duration)
         total_seconds = last_note.start_time + last_note.duration + 0.5
         total_samples = int(total_seconds * self.sample_rate)
         
-        # 2. Create the Canvas (Mixing Buffer)
-        print(f"Mixing {len(notes)} notes into {total_seconds:.2f}s audio...")
+        print(f"Mixing {len(notes)} notes (Instrument: {self.oscillator})...")
         mix_buffer = [0.0] * total_samples
 
-        # 3. Paint notes
         for note in notes:
             self._mix_note(mix_buffer, note)
 
-        # 4. Convert to Bytes
         return self._buffer_to_bytes(mix_buffer)
 
     def _mix_note(self, buffer, note):
         start_idx = int(note.start_time * self.sample_rate)
         dur_samples = int(note.duration * self.sample_rate)
-        attack = int(self.sample_rate * 0.01) # 10ms
+        
+        # ADSR Envelope settings
+        attack = int(self.sample_rate * 0.01)
         release = int(self.sample_rate * 0.01)
+
+        # Pre-calculation for optimization
+        two_pi_f = 2 * math.pi * note.frequency
 
         for i in range(dur_samples):
             if start_idx + i >= len(buffer): break
             
-            # Math: Sine Wave
             t = i / self.sample_rate
-            wave = math.sin(2 * math.pi * note.frequency * t)
             
-            # Math: Envelope (ADSR)
+            # --- WAVEFORM LOGIC ---
+            if self.oscillator == "sine":
+                # Standard Sine
+                wave = math.sin(two_pi_f * t)
+                
+            elif self.oscillator == "square":
+                # Square: +1 if Sine is positive, -1 if Sine is negative
+                val = math.sin(two_pi_f * t)
+                wave = 1.0 if val > 0 else -1.0
+                
+            elif self.oscillator == "saw":
+                # Sawtooth: Ramps linearly from -1 to 1
+                # (t * freq) % 1 creates a value from 0.0 to 1.0
+                # We multiply by 2 and subtract 1 to get range -1.0 to 1.0
+                wave = 2.0 * ((t * note.frequency) % 1.0) - 1.0
+            
+            else:
+                wave = 0.0 # Silence if unknown
+
+            # --- ENVELOPE LOGIC ---
             env = 1.0
             if i < attack: env = i / attack
             elif i > (dur_samples - release): env = (dur_samples - i) / release
             
-            # Mixing: Add to existing value
-            buffer[start_idx + i] += wave * env * note.velocity * 0.3
+            # --- MIXING ---
+            # We lower the volume (0.2) for Square/Saw because they sound much louder than Sine
+            vol_adjustment = 0.15 if self.oscillator in ["square", "saw"] else 0.3
+            
+            buffer[start_idx + i] += wave * env * note.velocity * vol_adjustment
 
     def _buffer_to_bytes(self, float_buffer):
         audio_bytes = bytearray()
         for sample in float_buffer:
-            # Clipping protection
             sample = max(min(sample, 1.0), -1.0)
             audio_bytes.extend(struct.pack('<h', int(sample * 32767)))
         return audio_bytes

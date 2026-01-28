@@ -2,7 +2,7 @@ import mido
 import sys
 from music_engine import Score, Note 
 
-def extract_midi_data(midi_filename):
+def extract_midi_data(midi_filename, instrument_name="sine"):
     """
     Reads a MIDI file and converts it into a Score object.
     """
@@ -17,8 +17,9 @@ def extract_midi_data(midi_filename):
 
     # 2. Create your Score
     # We name the output file based on the input name
-    output_name = midi_filename.replace(".mid", ".wav")
+    output_name = midi_filename.replace(".mid", f"_{instrument_name}.wav")
     my_score = Score(output_name)
+    my_score.synth.oscillator = instrument_name
 
     # 3. The Extraction Logic
     # We must track "absolute time" (total seconds elapsed)
@@ -66,9 +67,9 @@ if __name__ == "__main__":
     target_file = "house_at_pooh_corner.mid" 
     
     # Run the extractor
-    score = extract_midi_data(target_file)
-    
-    if score:
-        # Run the synthesizer
-        print("Synthesizing audio (this might take a moment)...")
-        score.save_to_wav()
+    # Try all three instruments!
+    for instrument in ["sine", "square", "saw"]:
+        print(f"\nGenerating {instrument} version...")
+        score = extract_midi_data(target_file, instrument_name=instrument)
+        if score:
+            score.save_to_wav()
