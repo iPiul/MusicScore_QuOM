@@ -1,0 +1,18 @@
+# Python compiled files
+__pycache__/
+*.py[cod]
+
+# Generated Audio Files (We generate these, so don't back them up)
+*.wav
+*.mp3
+
+# MIDI files (Optional: Keep this line if you WANT to back up the .mid source files)
+# *.mid
+
+# IDE settings (VS Code, PyCharm, etc.)
+.vscode/
+.idea/
+
+# OS Junk
+.DS_Store
+Thumbs.db
