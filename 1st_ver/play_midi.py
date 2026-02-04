@@ -2,7 +2,7 @@ import mido
 import sys
 from music_engine import Score, Note 
 
-def extract_midi_data(midi_filename, instrument_name="sine"):
+def extract_midi_data(midi_filename, instrument_name="sine", attack=0.01, release=0.1):
     """
     Reads a MIDI file and converts it into a Score object.
     """
@@ -20,6 +20,11 @@ def extract_midi_data(midi_filename, instrument_name="sine"):
     output_name = midi_filename.replace(".mid", f"_{instrument_name}.wav")
     my_score = Score(output_name)
     my_score.synth.oscillator = instrument_name
+
+    # Configure the synth with the physics parameters
+    my_score.synth.oscillator = instrument_name
+    my_score.synth.attack_time = attack
+    my_score.synth.release_time = release
 
     # 3. The Extraction Logic
     # We must track "absolute time" (total seconds elapsed)

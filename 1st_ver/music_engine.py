@@ -82,10 +82,12 @@ class Synthesizer:
     The Audio Engine. 
     Now supports multiple waveforms (Sine, Square, Sawtooth).
     """
-    def __init__(self, sample_rate=44100, oscillator="sine"):
+    def __init__(self, sample_rate=44100, oscillator="sine", attack=0.01, release=0.1):
         self.sample_rate = sample_rate
-        self.oscillator = oscillator  # Options: "sine", "square", "saw"
-        self.effects = []  # New: A list to hold our pedals!
+        self.oscillator = oscillator
+        self.attack_time = attack   # NEW: Variable Attack
+        self.release_time = release # NEW: Variable Release
+        self.effects = []
 
     def add_effect(self, effect: AudioEffect):
         self.effects.append(effect)
@@ -97,13 +99,13 @@ class Synthesizer:
         total_seconds = last_note.start_time + last_note.duration + 0.5
         total_samples = int(total_seconds * self.sample_rate)
         
-#       1. Mix the notes (Paint the canvas)
+        # 1. Mix the notes (Paint the canvas)
         print(f"Mixing {len(notes)} notes...")
         mix_buffer = [0.0] * total_samples
         for note in notes:
             self._mix_note(mix_buffer, note)
 
-        # 2. !! NEW !! Apply Effects Chain
+        # 2. Apply Effects Chain
         for effect in self.effects:
             effect.apply(mix_buffer, self.sample_rate)
 
@@ -115,8 +117,8 @@ class Synthesizer:
         dur_samples = int(note.duration * self.sample_rate)
         
         # ADSR Envelope settings
-        attack = int(self.sample_rate * 0.01)
-        release = int(self.sample_rate * 0.01)
+        attack = int(self.sample_rate * self.attack_time)
+        release = int(self.sample_rate * self.release_time)
 
         # Pre-calculation for optimization
         two_pi_f = 2 * math.pi * note.frequency

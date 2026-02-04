@@ -9,7 +9,7 @@ import subprocess
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# Your backend
+# Backend
 from play_midi import extract_midi_data
 
 class MidiToWavGUI:
@@ -39,6 +39,20 @@ class MidiToWavGUI:
         # --- Controls Section ---
         frame_controls = tk.LabelFrame(self.root, text="Synthesizer Settings", padx=10, pady=10)
         frame_controls.pack(pady=15, fill="x", padx=20)
+
+        # --- Physics Controls (New Section) ---
+        frame_phys = tk.LabelFrame(self.root, text="Envelope (Physics)", padx=10, pady=5)
+        frame_phys.pack(pady=5, fill="x", padx=20)
+
+        # Attack Slider
+        tk.Label(frame_phys, text="Attack (s):").pack(side=tk.LEFT)
+        self.attack_var = tk.DoubleVar(value=0.01)
+        tk.Scale(frame_phys, variable=self.attack_var, from_=0.0, to=0.5, resolution=0.01, orient=tk.HORIZONTAL, length=100).pack(side=tk.LEFT, padx=5)
+
+        # Release Slider
+        tk.Label(frame_phys, text="Release (s):").pack(side=tk.LEFT)
+        self.release_var = tk.DoubleVar(value=0.1)
+        tk.Scale(frame_phys, variable=self.release_var, from_=0.0, to=1.0, resolution=0.05, orient=tk.HORIZONTAL, length=100).pack(side=tk.LEFT, padx=5)
 
         # Oscillator Dropdown
         tk.Label(frame_controls, text="Waveform:").pack(side=tk.LEFT)
@@ -87,9 +101,12 @@ class MidiToWavGUI:
             midi_file = self.midi_path.get()
             instrument = self.oscillator.get()
 
+            # GET VALUES FROM SLIDERS
+            atk = self.attack_var.get()
+            rel = self.release_var.get()
+
             # Call backend
-            score = extract_midi_data(midi_file, instrument)
-            
+            score = extract_midi_data(midi_file, instrument, attack=atk, release=rel)            
             if score:
                 score.save_to_wav()
                 self.last_generated_score = score # Save for visualization
