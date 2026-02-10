@@ -1,8 +1,10 @@
 import mido
 import sys
-from music_engine import Score, Note 
+from music_engine import Score, Note, DelayEffect, DistortionEffect 
 
-def extract_midi_data(midi_filename, instrument_name="sine", attack=0.01, release=0.1):
+def extract_midi_data(midi_filename, instrument_name="sine", 
+                      attack=0.01, release=0.1, 
+                      use_delay=False, use_distortion=False):    
     """
     Parses a MIDI file and converts it into a Score object.
     
@@ -22,8 +24,13 @@ def extract_midi_data(midi_filename, instrument_name="sine", attack=0.01, releas
     except FileNotFoundError:
         print(f"Error: File '{midi_filename}' not found.")
         return None
-
+    
     # Initialize Score
+    # We append tags to the filename so files don't overwrite each other
+    fx_tag = ""
+    if use_distortion: fx_tag += "_dist"
+    if use_delay: fx_tag += "_echo"
+
     output_name = midi_filename.replace(".mid", f"_{instrument_name}.wav")
     my_score = Score(output_name)
     
@@ -32,14 +39,23 @@ def extract_midi_data(midi_filename, instrument_name="sine", attack=0.01, releas
     my_score.synth.attack_time = attack
     my_score.synth.release_time = release
 
+    # 2. Configure Effects Rack
+    # Order matters! Usually, we distort first, then echo the result.
+    if use_distortion:
+        print("-> Adding Distortion Effect")
+        # Drive=0.5 adds a nice "crunch" without destroying the sound
+        my_score.synth.add_effect(DistortionEffect(drive=0.5))
+        
+    if use_delay:
+        print("-> Adding Delay Effect")
+        # 0.3s delay is a standard "slapback" echo
+        my_score.synth.add_effect(DelayEffect(delay_seconds=0.3, decay=0.4))
+
     # --- Time Tracking ---
     # MIDI uses 'Delta Time' (time since last event).
     # We must accumulate this to get 'Absolute Time' for the timeline.
     current_time = 0.0
-    
-    # Dictionary to track active notes: { midi_note_number: start_timestamp }
     active_notes = {} 
-
     count = 0
     
     for msg in mid:

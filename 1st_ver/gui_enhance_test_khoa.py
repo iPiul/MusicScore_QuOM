@@ -20,8 +20,8 @@ class MidiToWavGUI:
     """
     def __init__(self, root):
         self.root = root
-        self.root.title("MIDI → WAV Studio")
-        self.root.geometry("450x450")
+        self.root.title("MIDI → WAV Studio (Physics Edition)")
+        self.root.geometry("480x520") # Increased height for new controls
         self.root.resizable(False, False)
 
         # State Variables
@@ -42,34 +42,46 @@ class MidiToWavGUI:
         tk.Entry(frame_file, textvariable=self.midi_path, width=35).grid(row=1, column=0, padx=5)
         tk.Button(frame_file, text="...", width=3, command=self.browse_midi).grid(row=1, column=1)
 
-        # Settings Section
-        frame_controls = tk.LabelFrame(self.root, text="Synthesizer Settings", padx=10, pady=10)
-        frame_controls.pack(pady=5, fill="x", padx=20)
+        # --- Settings Container ---
+        settings_frame = tk.LabelFrame(self.root, text="Synthesizer Controls", padx=10, pady=10)
+        settings_frame.pack(pady=10, fill="x", padx=20)
 
-        # Physics Parameters (ADSR)
-        frame_phys = tk.Frame(frame_controls)
-        frame_phys.pack(fill="x", pady=5)
+        # 1. Waveform Selection
+        frame_wave = tk.Frame(settings_frame)
+        frame_wave.pack(fill="x", pady=5)
+        tk.Label(frame_wave, text="Waveform:").pack(side=tk.LEFT)
+        osc_menu = ttk.Combobox(frame_wave, textvariable=self.oscillator, 
+                                values=["sine", "square", "saw"], state="readonly", width=12)
+        osc_menu.pack(side=tk.LEFT, padx=10)
+        osc_menu.current(0)
 
+        # 2. Physics Parameters (ADSR)
+        frame_phys = tk.Frame(settings_frame)
+        frame_phys.pack(fill="x", pady=10)
+
+        # Attack Slider
         tk.Label(frame_phys, text="Attack (s):").pack(side=tk.LEFT)
         self.attack_var = tk.DoubleVar(value=0.01)
         tk.Scale(frame_phys, variable=self.attack_var, from_=0.0, to=0.5, resolution=0.01, 
                  orient=tk.HORIZONTAL, length=80).pack(side=tk.LEFT, padx=5)
 
+        # Release Slider
         tk.Label(frame_phys, text="Release (s):").pack(side=tk.LEFT)
         self.release_var = tk.DoubleVar(value=0.1)
         tk.Scale(frame_phys, variable=self.release_var, from_=0.0, to=1.0, resolution=0.05, 
                  orient=tk.HORIZONTAL, length=80).pack(side=tk.LEFT, padx=5)
 
-        # Waveform Selection
-        frame_wave = tk.Frame(frame_controls)
-        frame_wave.pack(fill="x", pady=5)
-        tk.Label(frame_wave, text="Waveform:").pack(side=tk.LEFT)
-        osc_menu = ttk.Combobox(frame_wave, textvariable=self.oscillator, 
-                                values=["sine", "square", "saw"], state="readonly", width=10)
-        osc_menu.pack(side=tk.LEFT, padx=10)
-        osc_menu.current(0)
+        # 3. Effects Rack (NEW)
+        frame_fx = tk.LabelFrame(settings_frame, text="Effects Rack", padx=5, pady=5)
+        frame_fx.pack(fill="x", pady=5)
+        
+        self.delay_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(frame_fx, text="Echo (Delay)", variable=self.delay_var, fg="blue").pack(side=tk.LEFT, padx=10)
+        
+        self.dist_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(frame_fx, text="Distortion (Clip)", variable=self.dist_var, fg="red").pack(side=tk.LEFT, padx=10)
 
-        # Action Buttons
+        # --- Action Buttons ---
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(pady=10)
 
@@ -86,41 +98,43 @@ class MidiToWavGUI:
         self.status_label = tk.Label(self.root, text="Ready", fg="grey", font=("Arial", 9))
         self.status_label.pack(side=tk.BOTTOM, pady=5)
 
-
     def browse_midi(self):
         filename = filedialog.askopenfilename(filetypes=[("MIDI files", "*.mid")])
         if filename: self.midi_path.set(filename)
 
     def start_generation_thread(self):
-        """Starts conversion in a separate thread to prevent freezing."""
+        """Starts conversion in a separate thread."""
         if not self.midi_path.get():
             messagebox.showwarning("Warning", "Please select a MIDI file first.")
             return
 
-        # Disable button to prevent double-clicks
         self.btn_generate.config(state="disabled", text="Processing...")
         self.status_label.config(text="Converting... (Please wait)", fg="blue")
         
-        # Launch Thread
         threading.Thread(target=self.generate_audio_logic, daemon=True).start()
 
     def generate_audio_logic(self):
-        """The heavy lifting happens here."""
+        """Collected GUI inputs and sends to backend."""
         try:
             midi_file = self.midi_path.get()
             instrument = self.oscillator.get()
-
-            # GET VALUES FROM SLIDERS
+            
+            # Physics Params
             atk = self.attack_var.get()
             rel = self.release_var.get()
+            
+            # Effects Params
+            use_dly = self.delay_var.get()
+            use_dist = self.dist_var.get()
 
-            # Call backend
-            score = extract_midi_data(midi_file, instrument, attack=atk, release=rel)            
+            # Call Backend
+            score = extract_midi_data(midi_file, instrument, 
+                                      attack=atk, release=rel, 
+                                      use_delay=use_dly, use_distortion=use_dist)
+            
             if score:
                 score.save_to_wav()
-                self.last_generated_score = score # Save for visualization
-                
-                # Update GUI (Must be done safely)
+                self.last_generated_score = score
                 self.root.after(0, self.on_conversion_success)
             else:
                 self.root.after(0, lambda: self.on_conversion_error("Extraction failed"))
@@ -131,41 +145,35 @@ class MidiToWavGUI:
     def on_conversion_success(self):
         self.status_label.config(text="Success! WAV file created.", fg="green")
         self.btn_generate.config(state="normal", text="▶ Generate WAV")
-        self.btn_visualize.config(state="normal") # Enable Visualization
-        self.btn_play.config(state="normal")      # Enable Play
+        self.btn_visualize.config(state="normal")
+        self.btn_play.config(state="normal")
 
     def on_conversion_error(self, error_msg):
         self.status_label.config(text=f"Error: {error_msg}", fg="red")
         self.btn_generate.config(state="normal", text="▶ Generate WAV")
 
     def play_audio(self):
-        """Opens the generated WAV file with the system default player."""
         if not self.last_generated_score: return
         wav_path = self.last_generated_score.name
-        
         try:
             if platform.system() == 'Windows':
                 os.startfile(wav_path)
-            elif platform.system() == 'Darwin': # macOS
+            elif platform.system() == 'Darwin':
                 subprocess.call(('open', wav_path))
-            else: # Linux
+            else:
                 subprocess.call(('xdg-open', wav_path))
         except Exception as e:
             messagebox.showerror("Error", f"Could not open player: {e}")
 
     def open_visualizer(self):
-        """Opens a new window with the Matplotlib graph."""
         if not self.last_generated_score: return
 
-        # Create new top-level window
         viz_window = tk.Toplevel(self.root)
         viz_window.title(f"Piano Roll - {self.last_generated_score.name}")
         viz_window.geometry("800x600")
 
-        # Create Matplotlib Figure
         fig, ax = plt.subplots(figsize=(8, 6))
         
-        # --- Plotting Logic (Reuse from before) ---
         score = self.last_generated_score
         starts = [n.start_time for n in score.notes]
         pitches = [n.frequency for n in score.notes]
@@ -178,7 +186,6 @@ class MidiToWavGUI:
         ax.set_title("Note Distribution")
         ax.grid(True, linestyle='--', alpha=0.5)
 
-        # Embed into Tkinter Window
         canvas = FigureCanvasTkAgg(fig, master=viz_window)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
