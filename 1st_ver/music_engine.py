@@ -4,17 +4,20 @@ import struct
 
 class Note:
     """
-    Represents a musical event on a timeline.
+    Data structure representing a distinct musical event in the time domain.
     """
     def __init__(self, frequency, start_time, duration, velocity=0.5):
-        self.frequency = frequency
-        self.start_time = start_time # When does this note start? (seconds)
-        self.duration = duration     # How long does it last? (seconds)
-        self.velocity = velocity     # Volume (0.0 to 1.0)
+        self.frequency = frequency  # Pitch in Hz
+        self.start_time = start_time  # Absolute start time in seconds
+        self.duration = duration      # Duration in seconds
+        self.velocity = velocity      # Amplitude scalar (0.0 to 1.0)
 
     @staticmethod
     def get_freq(name):
-        """Converts string (e.g., 'A4') to Hz."""
+        """
+        Converts Scientific Pitch Notation (e.g., 'A4', 'C#5') to Frequency in Hz.
+        Uses Equal Temperament tuning where A4 = 440Hz.
+        """
         if name == 'REST': return 0.0
         semitones = {'C':0, 'C#':1, 'Db':1, 'D':2, 'D#':3, 'Eb':3, 'E':4, 'F':5, 'F#':6, 'Gb':6, 'G':7, 'G#':8, 'Ab':8, 'A':9, 'A#':10, 'Bb':10, 'B':11}
         try:
@@ -22,6 +25,8 @@ class Note:
                 note_str, octave = name[0:2], int(name[2])
             else:
                 note_str, octave = name[0], int(name[1])
+            
+            # Formula: f = 440 * 2^((n-57)/12)
             absolute_semitone = (octave * 12) + semitones[note_str]
             return 440 * (2 ** ((absolute_semitone - 57) / 12))
         except:
@@ -30,97 +35,106 @@ class Note:
 
     @staticmethod
     def midi_to_freq(midi_number):
-        """Converts MIDI note number (0-127) to Hz."""
+        """Converts MIDI note index (0-127) to Frequency (Hz)."""
         return 440.0 * (2 ** ((midi_number - 69) / 12))
 
+
 class AudioEffect:
-    """Base class for all effects."""
+    """Abstract base class for Signal Processing modules (DSP)."""
     def apply(self, buffer, sample_rate):
         raise NotImplementedError("Subclasses must implement apply()")
 
+
 class DelayEffect(AudioEffect):
-    """Adds an echo to the sound."""
+    """
+    Implements a Feedback Delay (Echo).
+    Superimposes a time-shifted copy of the signal onto itself.
+    """
     def __init__(self, delay_seconds=0.5, decay=0.5):
         self.delay_seconds = delay_seconds
-        self.decay = decay  # How much quieter is the echo? (0.5 = 50%)
+        self.decay = decay 
 
     def apply(self, buffer, sample_rate):
-        print("Applying Delay Effect...")
         delay_samples = int(self.delay_seconds * sample_rate)
-        
-        # We iterate backwards so we don't read data we just wrote
-        # Or simpler: create a copy of the original sound to read from
-        original_audio = list(buffer) # Copy buffer
+        # Create a copy to read original data while writing to the buffer
+        original_audio = list(buffer) 
         
         for i in range(len(buffer)):
             if i >= delay_samples:
-                # New Sound = Current Sound + (Old Sound * decay)
-                delayed_sample = original_audio[i - delay_samples]
-                buffer[i] += delayed_sample * self.decay
+                delayed_signal = original_audio[i - delay_samples]
+                buffer[i] += delayed_signal * self.decay
+
 
 class DistortionEffect(AudioEffect):
-    """Makes the sound 'crunchy' (Hard Clipping)."""
+    """
+    Implements Hard Clipping.
+    Simulates signal saturation by capping amplitude at a threshold.
+    """
     def __init__(self, drive=0.5):
         self.drive = drive # 0.0 to 1.0
 
     def apply(self, buffer, sample_rate):
-        print("Applying Distortion...")
         threshold = 1.0 - self.drive
         for i in range(len(buffer)):
-            # Hard clip the signal
+            # Hard clip the signal at +/- threshold
             if buffer[i] > threshold:
                 buffer[i] = threshold
             elif buffer[i] < -threshold:
                 buffer[i] = -threshold
             
-            # Boost volume to compensate for clipping
+            # Normalize volume
             buffer[i] /= threshold
 
 
 class Synthesizer:
     """
     The Audio Engine. 
-    Now supports multiple waveforms (Sine, Square, Sawtooth).
+    Handles waveform generation, superposition of notes, and mixing.
     """
     def __init__(self, sample_rate=44100, oscillator="sine", attack=0.01, release=0.1):
         self.sample_rate = sample_rate
-        self.oscillator = oscillator
-        self.attack_time = attack   # NEW: Variable Attack
-        self.release_time = release # NEW: Variable Release
-        self.effects = []
+        self.oscillator = oscillator 
+        self.attack_time = attack   # Physics: Rise time (Transient response)
+        self.release_time = release # Physics: Decay time (Damping)
+        self.effects = [] 
 
     def add_effect(self, effect: AudioEffect):
         self.effects.append(effect)
 
     def render_track(self, notes):
+        """
+        Compiles a list of Note objects into raw PCM audio data.
+        """
         if not notes: return b''
         
+        # Determine total audio duration including decay tail
         last_note = max(notes, key=lambda n: n.start_time + n.duration)
         total_seconds = last_note.start_time + last_note.duration + 0.5
         total_samples = int(total_seconds * self.sample_rate)
         
-        # 1. Mix the notes (Paint the canvas)
-        print(f"Mixing {len(notes)} notes...")
+        # Allocate mixing buffer (The "Canvas")
         mix_buffer = [0.0] * total_samples
+
+        # Superposition: Add each note's wave to the buffer
         for note in notes:
             self._mix_note(mix_buffer, note)
 
-        # 2. Apply Effects Chain
+        # Apply DSP effects chain
         for effect in self.effects:
             effect.apply(mix_buffer, self.sample_rate)
 
-        # 3. Convert to Bytes
+        # Quantize and encode to bytes
         return self._buffer_to_bytes(mix_buffer)
 
     def _mix_note(self, buffer, note):
+        """Generates samples for a single note and adds them to the main buffer."""
         start_idx = int(note.start_time * self.sample_rate)
         dur_samples = int(note.duration * self.sample_rate)
         
-        # ADSR Envelope settings
-        attack = int(self.sample_rate * self.attack_time)
-        release = int(self.sample_rate * self.release_time)
+        # Envelope settings (Transient Response)
+        attack_samples = int(self.sample_rate * self.attack_time)
+        release_samples = int(self.sample_rate * self.release_time)
 
-        # Pre-calculation for optimization
         two_pi_f = 2 * math.pi * note.frequency
 
         for i in range(dur_samples):
@@ -128,39 +142,36 @@ class Synthesizer:
             
             t = i / self.sample_rate
             
-            # --- WAVEFORM LOGIC ---
+            # --- Signal Generation ---
             if self.oscillator == "sine":
-                # Standard Sine
                 wave = math.sin(two_pi_f * t)
-                
             elif self.oscillator == "square":
-                # Square: +1 if Sine is positive, -1 if Sine is negative
                 val = math.sin(two_pi_f * t)
                 wave = 1.0 if val > 0 else -1.0
-                
             elif self.oscillator == "saw":
-                # Sawtooth: Ramps linearly from -1 to 1
-                # (t * freq) % 1 creates a value from 0.0 to 1.0
-                # We multiply by 2 and subtract 1 to get range -1.0 to 1.0
+                # Linear ramp: 2 * (fractional_part) - 1
                 wave = 2.0 * ((t * note.frequency) % 1.0) - 1.0
-            
             else:
-                wave = 0.0 # Silence if unknown
+                wave = 0.0 
 
-            # --- ENVELOPE LOGIC ---
+            # --- Envelope Application (ADSR) ---
+            # Uses Linear Interpolation
             env = 1.0
-            if i < attack: env = i / attack
-            elif i > (dur_samples - release): env = (dur_samples - i) / release
+            if i < attack_samples: 
+                env = i / attack_samples
+            elif i > (dur_samples - release_samples): 
+                env = (dur_samples - i) / release_samples
             
-            # --- MIXING ---
-            # We lower the volume (0.2) for Square/Saw because they sound much louder than Sine
-            vol_adjustment = 0.15 if self.oscillator in ["square", "saw"] else 0.3
-            
-            buffer[start_idx + i] += wave * env * note.velocity * vol_adjustment
+            # --- Mixing ---
+            # Amplitude scalar prevents clipping when summing complex waves
+            vol_adj = 0.15 if self.oscillator in ["square", "saw"] else 0.3
+            buffer[start_idx + i] += wave * env * note.velocity * vol_adj
 
     def _buffer_to_bytes(self, float_buffer):
+        """Quantizes float samples (-1.0 to 1.0) to 16-bit PCM integers."""
         audio_bytes = bytearray()
         for sample in float_buffer:
+            # Clamp value to prevent integer overflow
             sample = max(min(sample, 1.0), -1.0)
             audio_bytes.extend(struct.pack('<h', int(sample * 32767)))
         return audio_bytes

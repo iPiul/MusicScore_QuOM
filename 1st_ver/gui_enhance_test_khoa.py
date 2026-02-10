@@ -9,74 +9,83 @@ import subprocess
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# Backend
+# Backend integration
 from play_midi import extract_midi_data
 
 class MidiToWavGUI:
+    """
+    Main GUI application class.
+    Handles user interaction, multithreading for audio generation,
+    and data visualization.
+    """
     def __init__(self, root):
         self.root = root
-        self.root.title("MIDI → WAV Synthesizer")
-        self.root.geometry("450x350") # Slightly taller for new buttons
+        self.root.title("MIDI → WAV Studio")
+        self.root.geometry("450x450")
         self.root.resizable(False, False)
 
+        # State Variables
         self.midi_path = tk.StringVar()
         self.oscillator = tk.StringVar(value="sine")
-        self.last_generated_score = None # Store score for visualization
+        self.last_generated_score = None 
 
         self.create_widgets()
 
     def create_widgets(self):
-        # --- Title ---
+        # Header
         tk.Label(self.root, text="MIDI Studio Converter", font=("Arial", 16, "bold"), fg="#333").pack(pady=15)
 
-        # --- File Section ---
+        # File Selection Section
         frame_file = tk.Frame(self.root)
         frame_file.pack(pady=5)
         tk.Label(frame_file, text="Source:").grid(row=0, column=0, sticky="w")
         tk.Entry(frame_file, textvariable=self.midi_path, width=35).grid(row=1, column=0, padx=5)
         tk.Button(frame_file, text="...", width=3, command=self.browse_midi).grid(row=1, column=1)
 
-        # --- Controls Section ---
+        # Settings Section
         frame_controls = tk.LabelFrame(self.root, text="Synthesizer Settings", padx=10, pady=10)
-        frame_controls.pack(pady=15, fill="x", padx=20)
+        frame_controls.pack(pady=5, fill="x", padx=20)
 
-        # --- Physics Controls (New Section) ---
-        frame_phys = tk.LabelFrame(self.root, text="Envelope (Physics)", padx=10, pady=5)
-        frame_phys.pack(pady=5, fill="x", padx=20)
+        # Physics Parameters (ADSR)
+        frame_phys = tk.Frame(frame_controls)
+        frame_phys.pack(fill="x", pady=5)
 
-        # Attack Slider
         tk.Label(frame_phys, text="Attack (s):").pack(side=tk.LEFT)
         self.attack_var = tk.DoubleVar(value=0.01)
-        tk.Scale(frame_phys, variable=self.attack_var, from_=0.0, to=0.5, resolution=0.01, orient=tk.HORIZONTAL, length=100).pack(side=tk.LEFT, padx=5)
+        tk.Scale(frame_phys, variable=self.attack_var, from_=0.0, to=0.5, resolution=0.01, 
+                 orient=tk.HORIZONTAL, length=80).pack(side=tk.LEFT, padx=5)
 
-        # Release Slider
         tk.Label(frame_phys, text="Release (s):").pack(side=tk.LEFT)
         self.release_var = tk.DoubleVar(value=0.1)
-        tk.Scale(frame_phys, variable=self.release_var, from_=0.0, to=1.0, resolution=0.05, orient=tk.HORIZONTAL, length=100).pack(side=tk.LEFT, padx=5)
+        tk.Scale(frame_phys, variable=self.release_var, from_=0.0, to=1.0, resolution=0.05, 
+                 orient=tk.HORIZONTAL, length=80).pack(side=tk.LEFT, padx=5)
 
-        # Oscillator Dropdown
-        tk.Label(frame_controls, text="Waveform:").pack(side=tk.LEFT)
-        osc_menu = ttk.Combobox(frame_controls, textvariable=self.oscillator, 
+        # Waveform Selection
+        frame_wave = tk.Frame(frame_controls)
+        frame_wave.pack(fill="x", pady=5)
+        tk.Label(frame_wave, text="Waveform:").pack(side=tk.LEFT)
+        osc_menu = ttk.Combobox(frame_wave, textvariable=self.oscillator, 
                                 values=["sine", "square", "saw"], state="readonly", width=10)
         osc_menu.pack(side=tk.LEFT, padx=10)
         osc_menu.current(0)
 
-        # --- Action Buttons ---
+        # Action Buttons
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(pady=10)
 
         self.btn_generate = tk.Button(btn_frame, text="▶ Generate WAV", bg="#dddddd", command=self.start_generation_thread)
         self.btn_generate.pack(side=tk.LEFT, padx=5)
 
-        self.btn_visualize = tk.Button(btn_frame, text="📊 View Piano Roll", state="disabled", command=self.open_visualizer)
+        self.btn_visualize = tk.Button(btn_frame, text="📊 Piano Roll", state="disabled", command=self.open_visualizer)
         self.btn_visualize.pack(side=tk.LEFT, padx=5)
 
-        self.btn_play = tk.Button(btn_frame, text="♫ Play Audio", state="disabled", command=self.play_audio)
+        self.btn_play = tk.Button(btn_frame, text="♫ Play", state="disabled", command=self.play_audio)
         self.btn_play.pack(side=tk.LEFT, padx=5)
 
-        # --- Status ---
+        # Status Bar
         self.status_label = tk.Label(self.root, text="Ready", fg="grey", font=("Arial", 9))
         self.status_label.pack(side=tk.BOTTOM, pady=5)
+
 
     def browse_midi(self):
         filename = filedialog.askopenfilename(filetypes=[("MIDI files", "*.mid")])
