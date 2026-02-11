@@ -22,7 +22,7 @@ class MidiToWavGUI:
     """
     def __init__(self, root):
         self.root = root
-        self.root.title("Physics Audio Lab")
+        self.root.title("MIDI to WAV Converter & Synthesizer")
         self.root.geometry("500x600") # Increased size for tabs
         self.root.resizable(False, False)
 
