@@ -12,6 +12,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 # Backend integration
 from play_midi import extract_midi_data
 from music_engine import Score, Note, DelayEffect, DistortionEffect
+from sheet_music import SheetMusicPanel
 
 class MidiToWavGUI:
     """
@@ -22,7 +23,7 @@ class MidiToWavGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Physics Audio Lab")
-        self.root.geometry("550x600") # Slightly wider for the melody input
+        self.root.geometry("550x700") # Increased height for Sheet Music
         self.root.resizable(False, False)
 
         # State Variables
@@ -30,7 +31,7 @@ class MidiToWavGUI:
         self.oscillator = tk.StringVar(value="sine")
         self.last_generated_score = None 
         
-        # New: Melody String Variable
+        # New State Variable for Melody Sequence
         self.melody_var = tk.StringVar(value="C4:0.5 E4:0.5 G4:1.0")
 
         self.create_widgets()
@@ -43,7 +44,7 @@ class MidiToWavGUI:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(pady=5, fill="x", padx=10)
 
-        # TAB 1: MIDI Converter
+        # TAB 1: MIDI File
         self.tab_midi = tk.Frame(self.notebook, pady=10)
         self.notebook.add(self.tab_midi, text="  MIDI Converter  ")
         
@@ -64,13 +65,17 @@ class MidiToWavGUI:
         # Wide entry box for typing the melody
         tk.Entry(frame_manual, textvariable=self.melody_var, width=60, font=("Consolas", 10)).pack(pady=5)
 
+        # --- NEW: Sheet Music Display ---
+        self.sheet_music = SheetMusicPanel(self.tab_tone, height=120)
+        self.sheet_music.pack(pady=10)
+
         # --- GLOBAL SETTINGS (Shared) ---
         settings_frame = tk.LabelFrame(self.root, text="Synthesizer Settings", padx=10, pady=10)
-        settings_frame.pack(pady=10, fill="x", padx=20)
+        settings_frame.pack(pady=5, fill="x", padx=20)
 
         # 1. Waveform Selection
         frame_wave = tk.Frame(settings_frame)
-        frame_wave.pack(fill="x", pady=5)
+        frame_wave.pack(fill="x", pady=2)
         tk.Label(frame_wave, text="Waveform:").pack(side=tk.LEFT)
         osc_menu = ttk.Combobox(frame_wave, textvariable=self.oscillator, 
                                 values=["sine", "square", "saw"], state="readonly", width=12)
@@ -79,20 +84,20 @@ class MidiToWavGUI:
 
         # 2. Physics Parameters (ADSR)
         frame_phys = tk.Frame(settings_frame)
-        frame_phys.pack(fill="x", pady=10)
+        frame_phys.pack(fill="x", pady=5)
 
         tk.Label(frame_phys, text="Attack (s):").pack(side=tk.LEFT)
         self.attack_var = tk.DoubleVar(value=0.01)
         tk.Scale(frame_phys, variable=self.attack_var, from_=0.0, to=0.5, resolution=0.01, 
-                 orient=tk.HORIZONTAL, length=80).pack(side=tk.LEFT, padx=5)
+                 orient=tk.HORIZONTAL, length=70).pack(side=tk.LEFT, padx=5)
 
         tk.Label(frame_phys, text="Release (s):").pack(side=tk.LEFT)
         self.release_var = tk.DoubleVar(value=0.1)
         tk.Scale(frame_phys, variable=self.release_var, from_=0.0, to=1.0, resolution=0.05, 
-                 orient=tk.HORIZONTAL, length=80).pack(side=tk.LEFT, padx=5)
+                 orient=tk.HORIZONTAL, length=70).pack(side=tk.LEFT, padx=5)
 
         # 3. Effects Rack
-        frame_fx = tk.LabelFrame(settings_frame, text="Effects Rack", padx=5, pady=5)
+        frame_fx = tk.Frame(settings_frame)
         frame_fx.pack(fill="x", pady=5)
         
         self.delay_var = tk.BooleanVar(value=False)
@@ -124,6 +129,7 @@ class MidiToWavGUI:
 
     def start_generation_thread(self):
         """Starts processing based on the active tab."""
+        # Check which tab is active
         current_tab = self.notebook.index(self.notebook.select())
         
         if current_tab == 0: # MIDI Tab
@@ -141,10 +147,12 @@ class MidiToWavGUI:
 
     def _configure_score_effects(self, score):
         """Helper to apply GUI settings to any Score object."""
+        # 1. Physics
         score.synth.oscillator = self.oscillator.get()
         score.synth.attack_time = self.attack_var.get()
         score.synth.release_time = self.release_var.get()
         
+        # 2. Effects
         if self.dist_var.get():
             score.synth.add_effect(DistortionEffect(drive=0.5))
         if self.delay_var.get():
@@ -156,6 +164,7 @@ class MidiToWavGUI:
             midi_file = self.midi_path.get()
             instrument = self.oscillator.get()
             
+            # Use params for file naming, but re-configure synth manually to match GUI exactly
             atk = self.attack_var.get()
             rel = self.release_var.get()
             use_dly = self.delay_var.get()
@@ -183,10 +192,14 @@ class MidiToWavGUI:
             if not melody_str:
                  raise ValueError("Melody cannot be empty")
 
+            # 2. Draw the melody on the Sheet Music (Main thread update)
+            self.root.after(0, lambda: self.sheet_music.draw_melody(melody_str))
+
+            # 3. Audio Generation Logic
             filename = f"lab_sequence_{self.oscillator.get()}.wav"
             score = Score(filename)
             
-            # 2. Parse the String "C4:0.5 D4:0.5"
+            # Parse the String "C4:0.5 D4:0.5"
             tokens = melody_str.split()
             current_time = 0.0
 
@@ -210,7 +223,7 @@ class MidiToWavGUI:
                 # Advance the clock
                 current_time += duration
 
-            # 3. Apply Effects & Render
+            # 4. Apply Effects & Render
             self._configure_score_effects(score)
             score.save_to_wav()
             
@@ -231,27 +244,33 @@ class MidiToWavGUI:
         self.btn_generate.config(state="normal", text="▶ Generate WAV")
 
     def play_audio(self):
+        """Opens the generated WAV file with the system default player."""
         if not self.last_generated_score: return
         wav_path = self.last_generated_score.name
+        
         try:
             if platform.system() == 'Windows':
                 os.startfile(wav_path)
-            elif platform.system() == 'Darwin':
+            elif platform.system() == 'Darwin': # macOS
                 subprocess.call(('open', wav_path))
-            else:
+            else: # Linux
                 subprocess.call(('xdg-open', wav_path))
         except Exception as e:
             messagebox.showerror("Error", f"Could not open player: {e}")
 
     def open_visualizer(self):
+        """Opens a new window with the Matplotlib graph."""
         if not self.last_generated_score: return
 
+        # Create new top-level window
         viz_window = tk.Toplevel(self.root)
         viz_window.title(f"Piano Roll - {self.last_generated_score.name}")
         viz_window.geometry("800x600")
 
+        # Create Matplotlib Figure
         fig, ax = plt.subplots(figsize=(8, 6))
         
+        # --- Plotting Logic (Reuse from before) ---
         score = self.last_generated_score
         starts = [n.start_time for n in score.notes]
         pitches = [n.frequency for n in score.notes]
@@ -272,6 +291,7 @@ class MidiToWavGUI:
                 center = (max_freq + min_freq) / 2
                 ax.set_ylim(center - 50, center + 50)
 
+        # Embed into Tkinter Window
         canvas = FigureCanvasTkAgg(fig, master=viz_window)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
