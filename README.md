@@ -179,7 +179,6 @@ Potential improvements:
 
 ## License
 
-[Add your license information here]
 
 ## Contributing
 
