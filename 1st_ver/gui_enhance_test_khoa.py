@@ -11,7 +11,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 # Backend integration
 from play_midi import extract_midi_data
-# We now need direct access to the engine components for the Manual Mode
 from music_engine import Score, Note, DelayEffect, DistortionEffect
 
 class MidiToWavGUI:
@@ -22,8 +21,8 @@ class MidiToWavGUI:
     """
     def __init__(self, root):
         self.root = root
-        self.root.title("MIDI to WAV Converter & Synthesizer")
-        self.root.geometry("500x600") # Increased size for tabs
+        self.root.title("Physics Audio Lab")
+        self.root.geometry("550x600") # Slightly wider for the melody input
         self.root.resizable(False, False)
 
         # State Variables
@@ -31,9 +30,8 @@ class MidiToWavGUI:
         self.oscillator = tk.StringVar(value="sine")
         self.last_generated_score = None 
         
-        # New State Variables for Manual Tone
-        self.note_name_var = tk.StringVar(value="A4")
-        self.duration_var = tk.DoubleVar(value=2.0)
+        # New: Melody String Variable
+        self.melody_var = tk.StringVar(value="C4:0.5 E4:0.5 G4:1.0")
 
         self.create_widgets()
 
@@ -45,26 +43,26 @@ class MidiToWavGUI:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(pady=5, fill="x", padx=10)
 
-        # TAB 1: MIDI File
+        # TAB 1: MIDI Converter
         self.tab_midi = tk.Frame(self.notebook, pady=10)
         self.notebook.add(self.tab_midi, text="  MIDI Converter  ")
         
         tk.Label(self.tab_midi, text="Source File:").grid(row=0, column=0, sticky="w", padx=10)
-        tk.Entry(self.tab_midi, textvariable=self.midi_path, width=35).grid(row=0, column=1, padx=5)
+        tk.Entry(self.tab_midi, textvariable=self.midi_path, width=40).grid(row=0, column=1, padx=5)
         tk.Button(self.tab_midi, text="...", width=3, command=self.browse_midi).grid(row=0, column=2)
 
-        # TAB 2: Acoustics Lab (Manual Tone)
+        # TAB 2: Acoustics Lab (Sequencer)
         self.tab_tone = tk.Frame(self.notebook, pady=10)
         self.notebook.add(self.tab_tone, text="  Acoustics Lab  ")
         
         frame_manual = tk.Frame(self.tab_tone)
-        frame_manual.pack()
+        frame_manual.pack(fill="x", padx=10)
         
-        tk.Label(frame_manual, text="Note Name (e.g. C#4):").pack(side=tk.LEFT)
-        tk.Entry(frame_manual, textvariable=self.note_name_var, width=6, justify="center").pack(side=tk.LEFT, padx=5)
+        tk.Label(frame_manual, text="Melody Sequence (Format: Note:Duration)").pack(anchor="w")
+        tk.Label(frame_manual, text="Example: C4:0.5 D4:0.5 E4:1.0 REST:0.5", font=("Arial", 8), fg="grey").pack(anchor="w")
         
-        tk.Label(frame_manual, text="Duration (s):").pack(side=tk.LEFT, padx=(15, 0))
-        tk.Entry(frame_manual, textvariable=self.duration_var, width=6, justify="center").pack(side=tk.LEFT, padx=5)
+        # Wide entry box for typing the melody
+        tk.Entry(frame_manual, textvariable=self.melody_var, width=60, font=("Consolas", 10)).pack(pady=5)
 
         # --- GLOBAL SETTINGS (Shared) ---
         settings_frame = tk.LabelFrame(self.root, text="Synthesizer Settings", padx=10, pady=10)
@@ -126,7 +124,6 @@ class MidiToWavGUI:
 
     def start_generation_thread(self):
         """Starts processing based on the active tab."""
-        # Check which tab is active
         current_tab = self.notebook.index(self.notebook.select())
         
         if current_tab == 0: # MIDI Tab
@@ -144,12 +141,10 @@ class MidiToWavGUI:
 
     def _configure_score_effects(self, score):
         """Helper to apply GUI settings to any Score object."""
-        # 1. Physics
         score.synth.oscillator = self.oscillator.get()
         score.synth.attack_time = self.attack_var.get()
         score.synth.release_time = self.release_var.get()
         
-        # 2. Effects
         if self.dist_var.get():
             score.synth.add_effect(DistortionEffect(drive=0.5))
         if self.delay_var.get():
@@ -161,7 +156,6 @@ class MidiToWavGUI:
             midi_file = self.midi_path.get()
             instrument = self.oscillator.get()
             
-            # Use params for file naming, but re-configure synth manually to match GUI exactly
             atk = self.attack_var.get()
             rel = self.release_var.get()
             use_dly = self.delay_var.get()
@@ -182,30 +176,44 @@ class MidiToWavGUI:
             self.root.after(0, lambda: self.on_conversion_error(str(e)))
 
     def generate_tone_logic(self):
-        """Logic for Tab 2 (Manual Tone)"""
+        """Logic for Tab 2 (Manual Melody)"""
         try:
-            # 1. Get Inputs
-            name = self.note_name_var.get()
-            duration = self.duration_var.get()
-            
-            # 2. Create Score Manually
-            freq = Note.get_freq(name) # Using your static method!
-            
-            if freq == 0.0 and name != "REST":
-                 raise ValueError(f"Invalid note name: {name}")
+            # 1. Get Input String
+            melody_str = self.melody_var.get().strip()
+            if not melody_str:
+                 raise ValueError("Melody cannot be empty")
 
-            filename = f"tone_{name}_{self.oscillator.get()}.wav"
+            filename = f"lab_sequence_{self.oscillator.get()}.wav"
             score = Score(filename)
             
-            # 3. Create Note
-            note = Note(freq, start_time=0.0, duration=duration)
-            score.add_note(note)
-            
-            # 4. Apply Settings (Reuse helper)
+            # 2. Parse the String "C4:0.5 D4:0.5"
+            tokens = melody_str.split()
+            current_time = 0.0
+
+            for token in tokens:
+                if ":" in token:
+                    # Split "C4:0.5" -> name="C4", duration="0.5"
+                    name, dur_str = token.split(":")
+                    duration = float(dur_str)
+                else:
+                    # Default duration if not specified
+                    name = token
+                    duration = 1.0
+
+                freq = Note.get_freq(name)
+                
+                # Create Note and Add to Score
+                # Logic: Start time is the accumulated time of previous notes
+                note = Note(freq, start_time=current_time, duration=duration)
+                score.add_note(note)
+                
+                # Advance the clock
+                current_time += duration
+
+            # 3. Apply Effects & Render
             self._configure_score_effects(score)
-            
-            # 5. Render
             score.save_to_wav()
+            
             self.last_generated_score = score
             self.root.after(0, self.on_conversion_success)
 
@@ -250,11 +258,19 @@ class MidiToWavGUI:
         durations = [n.duration for n in score.notes]
         colors = [(n.velocity, 0.2, 1.0 - n.velocity) for n in score.notes]
 
-        ax.barh(pitches, durations, left=starts, height=5.0, color=colors, edgecolor='black')
+        ax.barh(pitches, durations, left=starts, height=2.0, color=colors, edgecolor='black')
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Frequency (Hz)")
         ax.set_title("Note Distribution")
         ax.grid(True, linestyle='--', alpha=0.5)
+
+        # Handle Auto-Scaling for Single/Few Notes
+        if len(pitches) > 0:
+            min_freq = min(pitches)
+            max_freq = max(pitches)
+            if max_freq - min_freq < 50:
+                center = (max_freq + min_freq) / 2
+                ax.set_ylim(center - 50, center + 50)
 
         canvas = FigureCanvasTkAgg(fig, master=viz_window)
         canvas.draw()
