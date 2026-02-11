@@ -19,7 +19,25 @@ class Note:
         Uses Equal Temperament tuning where A4 = 440Hz.
         """
         if name == 'REST': return 0.0
-        semitones = {'C':0, 'C#':1, 'Db':1, 'D':2, 'D#':3, 'Eb':3, 'E':4, 'F':5, 'F#':6, 'Gb':6, 'G':7, 'G#':8, 'Ab':8, 'A':9, 'A#':10, 'Bb':10, 'B':11}
+        semitones = {
+            # --- English / Scientific ---
+            'C': 0, 'C#': 1, 'Db': 1, 
+            'D': 2, 'D#': 3, 'Eb': 3, 
+            'E': 4, 
+            'F': 5, 'F#': 6, 'Gb': 6, 
+            'G': 7, 'G#': 8, 'Ab': 8, 
+            'A': 9, 'A#': 10, 'Bb': 10, 
+            'B': 11,
+            
+            # --- Solfège (French/Italian) ---
+            'Do': 0, 'Do#': 1, 'Reb': 1,
+            'Re': 2, 'Re#': 3, 'Mib': 3,
+            'Mi': 4,
+            'Fa': 5, 'Fa#': 6, 'Solb': 6,
+            'Sol': 7, 'Sol#': 8, 'Lab': 8,
+            'La': 9, 'La#': 10, 'Sib': 10,
+            'Si': 11
+        }
         try:
             if len(name) == 3:
                 note_str, octave = name[0:2], int(name[2])
