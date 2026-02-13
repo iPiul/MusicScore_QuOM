@@ -1,5 +1,4 @@
 import mido
-import sys
 from music_engine import Score, Note, DelayEffect, DistortionEffect 
 
 def extract_midi_data(midi_filename, instrument_name="sine", 
@@ -31,7 +30,8 @@ def extract_midi_data(midi_filename, instrument_name="sine",
     if use_distortion: fx_tag += "_dist"
     if use_delay: fx_tag += "_echo"
 
-    output_name = midi_filename.replace(".mid", f"_{instrument_name}.wav")
+    # Include effect tags in the output filename for clarity
+    output_name = midi_filename.replace(".mid", f"_{instrument_name}{fx_tag}.wav")
     my_score = Score(output_name)
     
     # Configure Synthesizer parameters (Instrument & Physics)
