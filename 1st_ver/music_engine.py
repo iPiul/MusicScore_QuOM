@@ -13,42 +13,69 @@ class Note:
         self.velocity = velocity      # Amplitude scalar (0.0 to 1.0)
 
     @staticmethod
+    def parse_note(name):
+        """
+        Parses a note string into its components.
+        Example: "C#4" -> ("C", "#", 4)
+        Example: "Solb5" -> ("Sol", "b", 5)
+        
+        Returns:
+            (base_name, accidental, octave) or (None, None, None)
+        """
+        if name == 'REST': 
+            return "REST", "", 0
+            
+        try:
+            # 1. Extract Octave (Last character)
+            # We assume the last character is always the octave number (0-9)
+            octave = int(name[-1])
+            raw_note = name[:-1] # Everything before the number
+            
+            # 2. Extract Accidental
+            if raw_note.endswith('#') or raw_note.endswith('b'):
+                accidental = raw_note[-1]
+                base_name = raw_note[:-1]
+            else:
+                accidental = ""
+                base_name = raw_note
+                
+            return base_name, accidental, octave
+            
+        except (ValueError, IndexError):
+            print(f"Warning: Could not parse note '{name}'")
+            return None, None, None
+
+    @staticmethod
     def get_freq(name):
         """
-        Converts Scientific Pitch Notation (e.g., 'A4', 'C#5') to Frequency in Hz.
-        Uses Equal Temperament tuning where A4 = 440Hz.
+        Converts Scientific Pitch Notation (e.g., 'A4', 'C#5', 'Do4') to Hz.
         """
         if name == 'REST': return 0.0
+        
+        # Unified Dictionary (English + Solfège)
         semitones = {
-            # --- English / Scientific ---
-            'C': 0, 'C#': 1, 'Db': 1, 
-            'D': 2, 'D#': 3, 'Eb': 3, 
-            'E': 4, 
-            'F': 5, 'F#': 6, 'Gb': 6, 
-            'G': 7, 'G#': 8, 'Ab': 8, 
-            'A': 9, 'A#': 10, 'Bb': 10, 
-            'B': 11,
-            
-            # --- Solfège (French/Italian) ---
-            'Do': 0, 'Do#': 1, 'Reb': 1,
-            'Re': 2, 'Re#': 3, 'Mib': 3,
-            'Mi': 4,
-            'Fa': 5, 'Fa#': 6, 'Solb': 6,
-            'Sol': 7, 'Sol#': 8, 'Lab': 8,
-            'La': 9, 'La#': 10, 'Sib': 10,
-            'Si': 11
+            # English
+            'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 
+            'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
+            # Solfège
+            'Do': 0, 'Do#': 1, 'Reb': 1, 'Re': 2, 'Re#': 3, 'Mib': 3, 'Mi': 4, 
+            'Fa': 5, 'Fa#': 6, 'Solb': 6, 'Sol': 7, 'Sol#': 8, 'Lab': 8, 'La': 9, 'La#': 10, 'Sib': 10, 'Si': 11
         }
+
         try:
-            if len(name) == 3:
-                note_str, octave = name[0:2], int(name[2])
-            else:
-                note_str, octave = name[0], int(name[1])
+            # Use our own helper to parse!
+            base, acc, octave = Note.parse_note(name)
             
-            # Formula: f = 440 * 2^((n-57)/12)
-            absolute_semitone = (octave * 12) + semitones[note_str]
+            if base is None: return 0.0
+            
+            # Reconstruct key for lookup (e.g., "C" + "#" = "C#")
+            full_note = base + acc
+            
+            # Formula
+            absolute_semitone = (octave * 12) + semitones[full_note]
             return 440 * (2 ** ((absolute_semitone - 57) / 12))
-        except:
-            print(f"Warning: Could not parse note '{name}', defaulting to 0Hz")
+        except Exception as e:
+            print(f"Error converting '{name}': {e}")
             return 0.0
 
     @staticmethod

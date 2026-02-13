@@ -1,4 +1,5 @@
 import tkinter as tk
+from music_engine import Note # Connect to the Core Engine
 
 class SheetMusicPanel(tk.Canvas):
     """
@@ -11,8 +12,12 @@ class SheetMusicPanel(tk.Canvas):
         self.line_spacing = 10  # Pixels between lines
         self.note_spacing = 40  # Pixels between notes horizontally
         
-        # Diatonic steps map (C=0, D=1, etc.)
-        self.step_map = {'C':0, 'D':1, 'E':2, 'F':3, 'G':4, 'A':5, 'B':6}
+        # Diatonic steps map (Unified English + Solfège)
+        # This maps the "Base Name" to a height index (0-6)
+        self.diatonic_map = {
+            'C':0, 'D':1, 'E':2, 'F':3, 'G':4, 'A':5, 'B':6,
+            'Do':0, 'Re':1, 'Mi':2, 'Fa':3, 'Sol':4, 'La':5, 'Si':6
+        }
         self.draw_staff()
 
     def draw_staff(self):
@@ -38,40 +43,38 @@ class SheetMusicPanel(tk.Canvas):
         for token in tokens:
             # Parse token (e.g. "C#4:0.5" or just "C4")
             if ":" in token:
-                note_part = token.split(":")[0]
+                note_name = token.split(":")[0]
             else:
-                note_part = token
+                note_name = token
                 
-            if note_part == "REST":
-                # Draw a rest symbol
-                self.create_text(start_x, self.staff_y_start + 20, text="𝄽", font=("Arial", 20))
-            else:
-                self.draw_single_note(note_part, start_x)
-            
+            self.draw_single_note(note_name, start_x)
             start_x += self.note_spacing
 
     def draw_single_note(self, note_name, x):
-        """Calculates Y position for a note and draws it."""
+        """Calculates Y position using the engine's parser."""
+        
+        # 1. Use the shared Music Engine to parse the string
+        # This ensures we support "C#4", "Do#4", "Solb5", etc. exactly like the audio engine.
+        base_name, accidental, octave = Note.parse_note(note_name)
+        
+        if base_name == "REST":
+            self.create_text(x, self.staff_y_start + 20, text="𝄽", font=("Arial", 20))
+            return
+
+        if base_name is None:
+            return # Invalid note
+
         try:
-            # 1. Parse Note (e.g., "C#4")
-            if len(note_name) == 3: # Sharp/Flat e.g. C#4
-                letter = note_name[0]
-                accidental = note_name[1]
-                octave = int(note_name[2])
-            else: # Natural e.g. C4
-                letter = note_name[0]
-                accidental = ""
-                octave = int(note_name[1])
-                
             # 2. Calculate vertical 'Step' height
-            # Treble Clef: Bottom line is E4.
-            # We map everything relative to F5 (Top line) for simpler drawing math.
-            # F5 is at self.staff_y_start.
+            # Treble Clef: F5 is the top line.
             
-            # Absolute Diatonic Index:
+            # Map base name to 0-6 index (C=0 ... B=6)
+            step_index = self.diatonic_map.get(base_name, 0)
+            
+            # Absolute Diatonic Height:
             # C4 = (4*7) + 0 = 28
             # F5 = (5*7) + 3 = 38
-            abs_step = (octave * 7) + self.step_map.get(letter.upper(), 0)
+            abs_step = (octave * 7) + step_index
             
             # Reference: F5 (Top Line) -> Index 38
             f5_step = (5 * 7) + 3 
@@ -80,13 +83,12 @@ class SheetMusicPanel(tk.Canvas):
             step_diff = f5_step - abs_step
             
             # Calculate Y pixel
-            # Each step is half a line spacing (5px)
             y_pos = self.staff_y_start + (step_diff * (self.line_spacing / 2))
             
             # 3. Draw Note Head
             self.create_oval(x, y_pos - 5, x + 12, y_pos + 5, fill="black")
             
-            # 4. Draw Stem (Up or Down depending on height)
+            # 4. Draw Stem
             if step_diff > 5: # Low note (Stem Up)
                 self.create_line(x+12, y_pos, x+12, y_pos-30, width=2)
             else: # High note (Stem Down)
@@ -97,14 +99,12 @@ class SheetMusicPanel(tk.Canvas):
                 self.create_text(x-10, y_pos, text=accidental, font=("Arial", 12, "bold"))
                 
             # 6. Draw Ledger Lines (if note is too high or low)
-            # E4 (Bottom Line) is at y = start + 40
-            # Notes below E4 need lines. C4 is below.
+            # E4 (Bottom Line) is at y = start + 40. C4 (Middle C) is below it.
             if y_pos >= (self.staff_y_start + 40 + 10): 
-                # Draw lines for every step below bottom line
-                ledger_y = self.staff_y_start + 50 # First ledger line
+                ledger_y = self.staff_y_start + 50 
                 while ledger_y <= y_pos:
                     self.create_line(x-5, ledger_y, x+17, ledger_y, width=1)
                     ledger_y += 10
 
         except Exception as e:
-            print(f"Could not draw note {note_name}: {e}")
+            print(f"Drawing error for {note_name}: {e}")
