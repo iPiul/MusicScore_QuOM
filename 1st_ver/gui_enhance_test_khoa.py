@@ -1,295 +1,348 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-import threading
+"""
+MusicScore QuOM - Main GUI Application
+======================================
+The user interface for the synthesis engine. 
+
+Architecture:
+- Frontend: Tkinter (Widget Toolkit)
+- Visualization: Matplotlib (Piano Roll) & Custom Canvas (Sheet Music)
+- Concurrency: 'threading' module prevents GUI freezing during rendering.
+
+Key Concept: Thread Safety
+Tkinter is not thread-safe. Background threads (audio rendering) must NOT 
+touch UI elements directly. We use `root.after()` to schedule UI updates 
+on the main thread once the background work is done.
+"""
+
 import os
+import threading
 import platform
 import subprocess
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
 
-# Visualization libraries
+# --- Third-Party Visualization ---
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# Backend integration
-from play_midi import extract_midi_data
+# --- Local Project Modules ---
 from music_engine import Score, Note, DelayEffect, DistortionEffect
+from play_midi import extract_midi_data
 from sheet_music import SheetMusicPanel
 
 class MidiToWavGUI:
     """
-    Main GUI application class.
-    Handles user interaction, multithreading for audio generation,
-    and data visualization.
+    Primary controller for the application.
+    Manages the lifecycle of the window, user inputs, and audio processing jobs.
     """
+    
     def __init__(self, root):
         self.root = root
         self.root.title("Physics Audio Lab")
-        self.root.geometry("550x700") # Increased height for Sheet Music
+        self.root.geometry("600x750") 
         self.root.resizable(False, False)
 
-        # State Variables
+        # --- Application State ---
+        # Stores paths and user settings
         self.midi_path = tk.StringVar()
         self.oscillator = tk.StringVar(value="sine")
         self.last_generated_score = None 
         
-        # New State Variable for Melody Sequence
+        # Default melody for the Acoustics Lab
         self.melody_var = tk.StringVar(value="C4:0.5 E4:0.5 G4:1.0")
 
-        self.create_widgets()
+        self._setup_ui()
 
-    def create_widgets(self):
-        # Header
-        tk.Label(self.root, text="Python Audio Synthesizer", font=("Arial", 16, "bold"), fg="#333").pack(pady=10)
+    def _setup_ui(self):
+        """Constructs the widget hierarchy."""
+        
+        # 1. Header
+        header = tk.Label(self.root, text="Python Audio Synthesizer", 
+                         font=("Helvetica", 16, "bold"), fg="#333")
+        header.pack(pady=15)
 
-        # --- TABS CONFIGURATION ---
+        # 2. Main Navigation (Tabs)
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(pady=5, fill="x", padx=10)
+        self.notebook.pack(pady=5, fill="x", padx=15)
 
-        # TAB 1: MIDI File
-        self.tab_midi = tk.Frame(self.notebook, pady=10)
+        # Tab A: MIDI File Converter
+        self.tab_midi = tk.Frame(self.notebook, pady=15)
         self.notebook.add(self.tab_midi, text="  MIDI Converter  ")
-        
-        tk.Label(self.tab_midi, text="Source File:").grid(row=0, column=0, sticky="w", padx=10)
-        tk.Entry(self.tab_midi, textvariable=self.midi_path, width=40).grid(row=0, column=1, padx=5)
-        tk.Button(self.tab_midi, text="...", width=3, command=self.browse_midi).grid(row=0, column=2)
+        self._build_midi_tab(self.tab_midi)
 
-        # TAB 2: Acoustics Lab (Sequencer)
-        self.tab_tone = tk.Frame(self.notebook, pady=10)
+        # Tab B: Acoustics Lab (Manual Sequencer)
+        self.tab_tone = tk.Frame(self.notebook, pady=15)
         self.notebook.add(self.tab_tone, text="  Acoustics Lab  ")
-        
-        frame_manual = tk.Frame(self.tab_tone)
-        frame_manual.pack(fill="x", padx=10)
-        
-        tk.Label(frame_manual, text="Melody Sequence (Format: Note:Duration)").pack(anchor="w")
-        tk.Label(frame_manual, text="Example: C4:0.5 D4:0.5 E4:1.0 REST:0.5", font=("Arial", 8), fg="grey").pack(anchor="w")
-        
-        # Wide entry box for typing the melody
-        tk.Entry(frame_manual, textvariable=self.melody_var, width=60, font=("Consolas", 10)).pack(pady=5)
+        self._build_lab_tab(self.tab_tone)
 
-        # --- NEW: Sheet Music Display ---
-        self.sheet_music = SheetMusicPanel(self.tab_tone, height=120)
-        self.sheet_music.pack(pady=10)
+        # 3. Global Synthesis Settings (Shared across tabs)
+        self._build_settings_panel()
 
-        # --- GLOBAL SETTINGS (Shared) ---
-        settings_frame = tk.LabelFrame(self.root, text="Synthesizer Settings", padx=10, pady=10)
-        settings_frame.pack(pady=5, fill="x", padx=20)
+        # 4. Control Bar (Buttons)
+        self._build_control_bar()
 
-        # 1. Waveform Selection
-        frame_wave = tk.Frame(settings_frame)
-        frame_wave.pack(fill="x", pady=2)
-        tk.Label(frame_wave, text="Waveform:").pack(side=tk.LEFT)
-        osc_menu = ttk.Combobox(frame_wave, textvariable=self.oscillator, 
-                                values=["sine", "square", "saw"], state="readonly", width=12)
-        osc_menu.pack(side=tk.LEFT, padx=10)
-        osc_menu.current(0)
-
-        # 2. Physics Parameters (ADSR)
-        frame_phys = tk.Frame(settings_frame)
-        frame_phys.pack(fill="x", pady=5)
-
-        tk.Label(frame_phys, text="Attack (s):").pack(side=tk.LEFT)
-        self.attack_var = tk.DoubleVar(value=0.01)
-        tk.Scale(frame_phys, variable=self.attack_var, from_=0.0, to=0.5, resolution=0.01, 
-                 orient=tk.HORIZONTAL, length=70).pack(side=tk.LEFT, padx=5)
-
-        tk.Label(frame_phys, text="Release (s):").pack(side=tk.LEFT)
-        self.release_var = tk.DoubleVar(value=0.1)
-        tk.Scale(frame_phys, variable=self.release_var, from_=0.0, to=1.0, resolution=0.05, 
-                 orient=tk.HORIZONTAL, length=70).pack(side=tk.LEFT, padx=5)
-
-        # 3. Effects Rack
-        frame_fx = tk.Frame(settings_frame)
-        frame_fx.pack(fill="x", pady=5)
-        
-        self.delay_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(frame_fx, text="Echo (Delay)", variable=self.delay_var, fg="blue").pack(side=tk.LEFT, padx=10)
-        
-        self.dist_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(frame_fx, text="Distortion (Clip)", variable=self.dist_var, fg="red").pack(side=tk.LEFT, padx=10)
-
-        # --- Action Buttons ---
-        btn_frame = tk.Frame(self.root)
-        btn_frame.pack(pady=10)
-
-        self.btn_generate = tk.Button(btn_frame, text="▶ Generate WAV", bg="#dddddd", command=self.start_generation_thread)
-        self.btn_generate.pack(side=tk.LEFT, padx=5)
-
-        self.btn_visualize = tk.Button(btn_frame, text="📊 Piano Roll", state="disabled", command=self.open_visualizer)
-        self.btn_visualize.pack(side=tk.LEFT, padx=5)
-
-        self.btn_play = tk.Button(btn_frame, text="♫ Play", state="disabled", command=self.play_audio)
-        self.btn_play.pack(side=tk.LEFT, padx=5)
-
-        # Status Bar
+        # 5. Status Bar
         self.status_label = tk.Label(self.root, text="Ready", fg="grey", font=("Arial", 9))
         self.status_label.pack(side=tk.BOTTOM, pady=5)
 
+    def _build_midi_tab(self, parent):
+        """Layout for selecting MIDI files."""
+        container = tk.Frame(parent)
+        container.pack()
+        
+        tk.Label(container, text="Source File:").grid(row=0, column=0, sticky="w", padx=5)
+        
+        entry = tk.Entry(container, textvariable=self.midi_path, width=45)
+        entry.grid(row=0, column=1, padx=5)
+        
+        btn = tk.Button(container, text="Browse...", command=self.browse_midi)
+        btn.grid(row=0, column=2, padx=5)
+
+    def _build_lab_tab(self, parent):
+        """Layout for the Sheet Music and Melody Input."""
+        # Input Area
+        input_frame = tk.Frame(parent)
+        input_frame.pack(fill="x", padx=15)
+        
+        tk.Label(input_frame, text="Melody Sequence (Note:Duration)", font=("Arial", 10, "bold")).pack(anchor="w")
+        tk.Label(input_frame, text="Example: C4:0.5 D4:0.5 E4:1.0", font=("Arial", 8), fg="#666").pack(anchor="w")
+        
+        entry = tk.Entry(input_frame, textvariable=self.melody_var, width=60, font=("Consolas", 11))
+        entry.pack(pady=5, fill="x")
+
+        # Sheet Music Visualization Widget
+        # We pass the reference beat (0.5s) so the visualizer knows how to calculate flags/beams
+        self.sheet_music = SheetMusicPanel(parent, height=140, reference_beat=0.5)
+        self.sheet_music.pack(pady=10, padx=15, fill="both", expand=True)
+
+    def _build_settings_panel(self):
+        """Layout for DSP controls (Oscillator, ADSR, Effects)."""
+        group = tk.LabelFrame(self.root, text="Synthesizer Configuration", padx=15, pady=10)
+        group.pack(pady=10, fill="x", padx=20)
+
+        # Row 1: Waveform Selector
+        row1 = tk.Frame(group)
+        row1.pack(fill="x", pady=2)
+        tk.Label(row1, text="Oscillator Type:").pack(side=tk.LEFT)
+        
+        osc_menu = ttk.Combobox(row1, textvariable=self.oscillator, 
+                                values=["sine", "square", "saw"], state="readonly", width=15)
+        osc_menu.pack(side=tk.LEFT, padx=10)
+        osc_menu.current(0)
+
+        # Row 2: ADSR Envelope Sliders
+        row2 = tk.Frame(group)
+        row2.pack(fill="x", pady=5)
+
+        # Attack Slider
+        tk.Label(row2, text="Attack (s):").pack(side=tk.LEFT)
+        self.attack_var = tk.DoubleVar(value=0.01)
+        tk.Scale(row2, variable=self.attack_var, from_=0.0, to=0.5, resolution=0.01, 
+                 orient=tk.HORIZONTAL, length=100).pack(side=tk.LEFT, padx=5)
+
+        # Release Slider
+        tk.Label(row2, text="Release (s):").pack(side=tk.LEFT)
+        self.release_var = tk.DoubleVar(value=0.1)
+        tk.Scale(row2, variable=self.release_var, from_=0.0, to=1.0, resolution=0.05, 
+                 orient=tk.HORIZONTAL, length=100).pack(side=tk.LEFT, padx=5)
+
+        # Row 3: Effects Chain
+        row3 = tk.Frame(group)
+        row3.pack(fill="x", pady=5)
+        
+        self.delay_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(row3, text="Enable Echo (Delay)", variable=self.delay_var, 
+                       fg="#0055aa").pack(side=tk.LEFT, padx=10)
+        
+        self.dist_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(row3, text="Enable Overdrive (Distortion)", variable=self.dist_var, 
+                       fg="#aa0000").pack(side=tk.LEFT, padx=10)
+
+    def _build_control_bar(self):
+        """Main Action Buttons."""
+        frame = tk.Frame(self.root)
+        frame.pack(pady=15)
+
+        self.btn_generate = tk.Button(frame, text="▶ Render Audio", bg="#e1e1e1", 
+                                      font=("Arial", 10, "bold"),
+                                      command=self.start_processing_job)
+        self.btn_generate.pack(side=tk.LEFT, padx=5)
+
+        self.btn_visualize = tk.Button(frame, text="📊 View Spectrogram", 
+                                       state="disabled", command=self.open_visualizer)
+        self.btn_visualize.pack(side=tk.LEFT, padx=5)
+
+        self.btn_play = tk.Button(frame, text="♫ Play Output", 
+                                  state="disabled", command=self.play_audio)
+        self.btn_play.pack(side=tk.LEFT, padx=5)
+
+    # --- Interaction Logic ---
+
     def browse_midi(self):
-        filename = filedialog.askopenfilename(filetypes=[("MIDI files", "*.mid")])
-        if filename: self.midi_path.set(filename)
+        path = filedialog.askopenfilename(filetypes=[("MIDI files", "*.mid")])
+        if path: self.midi_path.set(path)
 
-    def start_generation_thread(self):
-        """Starts processing based on the active tab."""
-        # Check which tab is active
-        current_tab = self.notebook.index(self.notebook.select())
+    def start_processing_job(self):
+        """
+        Determines which tab is active and spawns a background thread 
+        to handle the heavy lifting (audio rendering).
+        """
+        active_tab_idx = self.notebook.index(self.notebook.select())
         
-        if current_tab == 0: # MIDI Tab
+        if active_tab_idx == 0: # MIDI Tab
             if not self.midi_path.get():
-                messagebox.showwarning("Warning", "Please select a MIDI file first.")
+                messagebox.showwarning("Input Missing", "Please select a MIDI file first.")
                 return
-            target_method = self.generate_midi_logic
+            target_function = self._job_render_midi
         else: # Acoustics Lab Tab
-            target_method = self.generate_tone_logic
+            target_function = self._job_render_melody
 
-        self.btn_generate.config(state="disabled", text="Processing...")
-        self.status_label.config(text="Converting... (Please wait)", fg="blue")
+        # Lock UI to prevent spamming
+        self.btn_generate.config(state="disabled", text="Rendering...")
+        self.status_label.config(text="Processing audio data...", fg="blue")
         
-        threading.Thread(target=target_method, daemon=True).start()
+        # Run logic in a separate thread (Daemon threads die when the app closes)
+        threading.Thread(target=target_function, daemon=True).start()
 
-    def _configure_score_effects(self, score):
-        """Helper to apply GUI settings to any Score object."""
-        # 1. Physics
-        score.synth.oscillator = self.oscillator.get()
-        score.synth.attack_time = self.attack_var.get()
-        score.synth.release_time = self.release_var.get()
-        
-        # 2. Effects
-        if self.dist_var.get():
-            score.synth.add_effect(DistortionEffect(drive=0.5))
-        if self.delay_var.get():
-            score.synth.add_effect(DelayEffect(delay_seconds=0.3, decay=0.4))
+    # --- Background Jobs (Run in Worker Thread) ---
 
-    def generate_midi_logic(self):
-        """Logic for Tab 1 (MIDI)"""
+    def _job_render_midi(self):
         try:
-            midi_file = self.midi_path.get()
-            instrument = self.oscillator.get()
-            
-            # Use params for file naming, but re-configure synth manually to match GUI exactly
-            atk = self.attack_var.get()
-            rel = self.release_var.get()
-            use_dly = self.delay_var.get()
-            use_dist = self.dist_var.get()
-
-            score = extract_midi_data(midi_file, instrument, 
-                                      attack=atk, release=rel, 
-                                      use_delay=use_dly, use_distortion=use_dist)
+            # Gather params (safe to read TkVars from threads, but usually safer to pass values)
+            # Here we read directly for simplicity.
+            score = extract_midi_data(
+                self.midi_path.get(), 
+                self.oscillator.get(), 
+                attack=self.attack_var.get(),
+                release=self.release_var.get(), 
+                use_delay=self.delay_var.get(), 
+                use_distortion=self.dist_var.get()
+            )
             
             if score:
                 score.save_to_wav()
                 self.last_generated_score = score
-                self.root.after(0, self.on_conversion_success)
+                # Schedule success callback on Main Thread
+                self.root.after(0, self._on_job_success)
             else:
-                self.root.after(0, lambda: self.on_conversion_error("Extraction failed"))
+                self.root.after(0, lambda: self._on_job_error("MIDI Parsing failed."))
 
         except Exception as e:
-            self.root.after(0, lambda: self.on_conversion_error(str(e)))
+            self.root.after(0, lambda: self._on_job_error(str(e)))
 
-    def generate_tone_logic(self):
-        """Logic for Tab 2 (Manual Melody)"""
+    def _job_render_melody(self):
         try:
-            # 1. Get Input String
             melody_str = self.melody_var.get().strip()
-            if not melody_str:
-                 raise ValueError("Melody cannot be empty")
+            if not melody_str: raise ValueError("Melody cannot be empty")
 
-            # 2. Draw the melody on the Sheet Music (Main thread update)
-            self.root.after(0, lambda: self.sheet_music.draw_melody_with_beaming(melody_str))
+            # Update Sheet Music (Must happen on Main Thread)
+            self.root.after(0, lambda: self.sheet_music.draw_melody(melody_str))
 
-            # 3. Audio Generation Logic
-            filename = f"lab_sequence_{self.oscillator.get()}.wav"
+            # Prepare Score
+            filename = f"lab_output_{self.oscillator.get()}.wav"
             score = Score(filename)
             
-            # Parse the String "C4:0.5 D4:0.5"
+            # Parse Tokens
             tokens = melody_str.split()
-            current_time = 0.0
+            cursor_time = 0.0
 
             for token in tokens:
+                # Format: "NoteName:Duration" (e.g., C4:0.5)
                 if ":" in token:
-                    # Split "C4:0.5" -> name="C4", duration="0.5"
                     name, dur_str = token.split(":")
                     duration = float(dur_str)
                 else:
-                    # Default duration if not specified
                     name = token
                     duration = 1.0
 
-                # Create Note using the factory that converts name -> frequency
-                # Logic: Start time is the accumulated time of previous notes
-                note = Note.from_name(name, start_time=current_time, duration=duration)
+                note = Note.from_name(name, start_time=cursor_time, duration=duration)
                 score.add_note(note)
-                
-                # Advance the clock
-                current_time += duration
+                cursor_time += duration
 
-            # 4. Apply Effects & Render
-            self._configure_score_effects(score)
+            # Apply Settings
+            score.synth.oscillator = self.oscillator.get()
+            score.synth.attack_time = self.attack_var.get()
+            score.synth.release_time = self.release_var.get()
+            
+            if self.dist_var.get():
+                score.synth.add_effect(DistortionEffect(drive=0.5))
+            if self.delay_var.get():
+                score.synth.add_effect(DelayEffect(delay_seconds=0.3, decay=0.4))
+
+            # Render
             score.save_to_wav()
             
             self.last_generated_score = score
-            self.root.after(0, self.on_conversion_success)
+            self.root.after(0, self._on_job_success)
 
         except Exception as e:
-            self.root.after(0, lambda: self.on_conversion_error(str(e)))
+            self.root.after(0, lambda: self._on_job_error(str(e)))
 
-    def on_conversion_success(self):
-        self.status_label.config(text="Success! WAV file created.", fg="green")
-        self.btn_generate.config(state="normal", text="▶ Generate WAV")
+    # --- Callbacks (Run on Main Thread) ---
+
+    def _on_job_success(self):
+        self.status_label.config(text="Render Complete! File saved.", fg="green")
+        self.btn_generate.config(state="normal", text="▶ Render Audio")
         self.btn_visualize.config(state="normal")
         self.btn_play.config(state="normal")
 
-    def on_conversion_error(self, error_msg):
+    def _on_job_error(self, error_msg):
         self.status_label.config(text=f"Error: {error_msg}", fg="red")
-        self.btn_generate.config(state="normal", text="▶ Generate WAV")
+        self.btn_generate.config(state="normal", text="▶ Render Audio")
+        messagebox.showerror("Rendering Error", error_msg)
+
+    # --- External Integrations ---
 
     def play_audio(self):
-        """Opens the generated WAV file with the system default player."""
+        """Launches the default system audio player."""
         if not self.last_generated_score: return
-        wav_path = self.last_generated_score.name
+        path = self.last_generated_score.name
         
         try:
             if platform.system() == 'Windows':
-                os.startfile(wav_path)
+                os.startfile(path)
             elif platform.system() == 'Darwin': # macOS
-                subprocess.call(('open', wav_path))
+                subprocess.call(('open', path))
             else: # Linux
-                subprocess.call(('xdg-open', wav_path))
+                subprocess.call(('xdg-open', path))
         except Exception as e:
-            messagebox.showerror("Error", f"Could not open player: {e}")
+            messagebox.showerror("Playback Error", f"Could not launch player: {e}")
 
     def open_visualizer(self):
-        """Opens a new window with the Matplotlib graph."""
+        """Generates a Piano Roll graph using Matplotlib."""
         if not self.last_generated_score: return
 
-        # Create new top-level window
+        # New window for the graph
         viz_window = tk.Toplevel(self.root)
-        viz_window.title(f"Piano Roll - {self.last_generated_score.name}")
+        viz_window.title(f"Visual Analysis - {self.last_generated_score.name}")
         viz_window.geometry("800x600")
 
-        # Create Matplotlib Figure
+        # Generate Plot
         fig, ax = plt.subplots(figsize=(8, 6))
         
-        # --- Plotting Logic (Reuse from before) ---
         score = self.last_generated_score
         starts = [n.start_time for n in score.notes]
         pitches = [n.frequency for n in score.notes]
         durations = [n.duration for n in score.notes]
+        # Color code by velocity
         colors = [(n.velocity, 0.2, 1.0 - n.velocity) for n in score.notes]
 
-        ax.barh(pitches, durations, left=starts, height=2.0, color=colors, edgecolor='black')
+        # Draw Gantt chart style bars
+        ax.barh(pitches, durations, left=starts, height=2.0, color=colors, edgecolor='black', align='center')
+        
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Frequency (Hz)")
-        ax.set_title("Note Distribution")
+        ax.set_title("Note Distribution (Piano Roll)")
         ax.grid(True, linestyle='--', alpha=0.5)
 
-        # Handle Auto-Scaling for Single/Few Notes
-        if len(pitches) > 0:
-            min_freq = min(pitches)
-            max_freq = max(pitches)
-            if max_freq - min_freq < 50:
-                center = (max_freq + min_freq) / 2
-                ax.set_ylim(center - 50, center + 50)
+        # Smart Scaling: Zoom in if pitch range is small
+        if pitches:
+            min_f, max_f = min(pitches), max(pitches)
+            if (max_f - min_f) < 50:
+                mid = (max_f + min_f) / 2
+                ax.set_ylim(mid - 50, mid + 50)
 
-        # Embed into Tkinter Window
+        # Embed plot in Tkinter window
         canvas = FigureCanvasTkAgg(fig, master=viz_window)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
