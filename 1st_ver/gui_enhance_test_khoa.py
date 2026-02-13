@@ -193,7 +193,7 @@ class MidiToWavGUI:
                  raise ValueError("Melody cannot be empty")
 
             # 2. Draw the melody on the Sheet Music (Main thread update)
-            self.root.after(0, lambda: self.sheet_music.draw_melody(melody_str))
+            self.root.after(0, lambda: self.sheet_music.draw_melody_with_beaming(melody_str))
 
             # 3. Audio Generation Logic
             filename = f"lab_sequence_{self.oscillator.get()}.wav"
