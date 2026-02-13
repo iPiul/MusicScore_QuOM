@@ -1,86 +1,85 @@
 import math
 import wave
 import struct
+from dataclasses import dataclass
+from functools import lru_cache
 
+
+# Unified Dictionary (English + Solfège)
+SEMITONES = {
+    # English
+    'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4,
+    'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
+    # Solfège
+    'Do': 0, 'Do#': 1, 'Reb': 1, 'Re': 2, 'Re#': 3, 'Mib': 3, 'Mi': 4,
+    'Fa': 5, 'Fa#': 6, 'Solb': 6, 'Sol': 7, 'Sol#': 8, 'Lab': 8, 'La': 9, 'La#': 10, 'Sib': 10, 'Si': 11
+}
+
+
+def _parse_note(name):
+    """Module-level parser for note name strings.
+
+    Returns (base_name, accidental, octave) or (None, None, None).
+    """
+    if name == 'REST':
+        return "REST", "", 0
+
+    try:
+        octave = int(name[-1])
+        raw_note = name[:-1]
+
+        if raw_note.endswith('#') or raw_note.endswith('b'):
+            accidental = raw_note[-1]
+            base_name = raw_note[:-1]
+        else:
+            accidental = ""
+            base_name = raw_note
+
+        return base_name, accidental, octave
+    except (ValueError, IndexError):
+        return None, None, None
+
+
+@lru_cache(maxsize=1024)
+def name_to_freq(name: str) -> float:
+    """Cached conversion from a note name to frequency in Hz."""
+    if name == 'REST':
+        return 0.0
+
+    base, acc, octave = _parse_note(name)
+    if base is None:
+        return 0.0
+
+    full_note = base + acc
+    try:
+        absolute_semitone = (octave * 12) + SEMITONES[full_note]
+        return 440.0 * (2 ** ((absolute_semitone - 57) / 12))
+    except KeyError:
+        return 0.0
+
+
+@dataclass
 class Note:
-    """
-    Data structure representing a distinct musical event in the time domain.
-    """
-    def __init__(self, frequency, start_time, duration, velocity=0.5):
-        self.frequency = frequency  # Pitch in Hz
-        self.start_time = start_time  # Absolute start time in seconds
-        self.duration = duration      # Duration in seconds
-        self.velocity = velocity      # Amplitude scalar (0.0 to 1.0)
+    frequency: float
+    start_time: float
+    duration: float
+    velocity: float = 0.5
 
+    @classmethod
+    def from_name(cls, name: str, start_time: float, duration: float, velocity: float = 0.5):
+        return cls(name_to_freq(name), start_time, duration, velocity)
+
+    # Backwards-compatible wrappers
     @staticmethod
     def parse_note(name):
-        """
-        Parses a note string into its components.
-        Example: "C#4" -> ("C", "#", 4)
-        Example: "Solb5" -> ("Sol", "b", 5)
-        
-        Returns:
-            (base_name, accidental, octave) or (None, None, None)
-        """
-        if name == 'REST': 
-            return "REST", "", 0
-            
-        try:
-            # 1. Extract Octave (Last character)
-            # We assume the last character is always the octave number (0-9)
-            octave = int(name[-1])
-            raw_note = name[:-1] # Everything before the number
-            
-            # 2. Extract Accidental
-            if raw_note.endswith('#') or raw_note.endswith('b'):
-                accidental = raw_note[-1]
-                base_name = raw_note[:-1]
-            else:
-                accidental = ""
-                base_name = raw_note
-                
-            return base_name, accidental, octave
-            
-        except (ValueError, IndexError):
-            print(f"Warning: Could not parse note '{name}'")
-            return None, None, None
+        return _parse_note(name)
 
     @staticmethod
     def get_freq(name):
-        """
-        Converts Scientific Pitch Notation (e.g., 'A4', 'C#5', 'Do4') to Hz.
-        """
-        if name == 'REST': return 0.0
-        
-        # Unified Dictionary (English + Solfège)
-        semitones = {
-            # English
-            'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 
-            'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
-            # Solfège
-            'Do': 0, 'Do#': 1, 'Reb': 1, 'Re': 2, 'Re#': 3, 'Mib': 3, 'Mi': 4, 
-            'Fa': 5, 'Fa#': 6, 'Solb': 6, 'Sol': 7, 'Sol#': 8, 'Lab': 8, 'La': 9, 'La#': 10, 'Sib': 10, 'Si': 11
-        }
-
-        try:
-            # Use our own helper to parse!
-            base, acc, octave = Note.parse_note(name)
-            
-            if base is None: return 0.0
-            
-            # Reconstruct key for lookup (e.g., "C" + "#" = "C#")
-            full_note = base + acc
-            
-            # Formula
-            absolute_semitone = (octave * 12) + semitones[full_note]
-            return 440 * (2 ** ((absolute_semitone - 57) / 12))
-        except Exception as e:
-            print(f"Error converting '{name}': {e}")
-            return 0.0
+        return name_to_freq(name)
 
     @staticmethod
     def midi_to_freq(midi_number):
-        """Converts MIDI note index (0-127) to Frequency (Hz)."""
         return 440.0 * (2 ** ((midi_number - 69) / 12))
 
 
@@ -242,13 +241,13 @@ class Score:
 # --- EXAMPLE USAGE ---
 if __name__ == "__main__":
     score = Score("test_mix.wav")
-    
+
     # Timeline Test: Overlapping notes (Polyphony)
     # Start C4 at 0.0s
-    score.add_note(Note(Note.get_freq("C4"), start_time=0.0, duration=2.0))
+    score.add_note(Note.from_name("C4", start_time=0.0, duration=2.0))
     # Start E4 at 0.5s (Overlaps!)
-    score.add_note(Note(Note.get_freq("E4"), start_time=0.5, duration=2.0))
+    score.add_note(Note.from_name("E4", start_time=0.5, duration=2.0))
     # Start G4 at 1.0s (Full Chord!)
-    score.add_note(Note(Note.get_freq("G4"), start_time=1.0, duration=2.0))
-    
+    score.add_note(Note.from_name("G4", start_time=1.0, duration=2.0))
+
     score.save_to_wav()

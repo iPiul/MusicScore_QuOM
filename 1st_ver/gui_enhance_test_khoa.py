@@ -213,11 +213,9 @@ class MidiToWavGUI:
                     name = token
                     duration = 1.0
 
-                freq = Note.get_freq(name)
-                
-                # Create Note and Add to Score
+                # Create Note using the factory that converts name -> frequency
                 # Logic: Start time is the accumulated time of previous notes
-                note = Note(freq, start_time=current_time, duration=duration)
+                note = Note.from_name(name, start_time=current_time, duration=duration)
                 score.add_note(note)
                 
                 # Advance the clock
