@@ -250,7 +250,7 @@ python 1st_ver/play_midi.py
 
 ---
 
-## 📜 Terms & License
+## 📜 License
 
 This project is open for learning and experimentation. Please respect original MIDI compositions and artists when converting files.
 
@@ -258,4 +258,4 @@ This project is open for learning and experimentation. Please respect original M
 
 **Enjoy creating! 🎶**
 
-Something unclear? Feel free to ask or submit feedback!
+Questions? Found a bug? Have ideas? **Feedback is welcome!** Open an issue or reach out directly.
