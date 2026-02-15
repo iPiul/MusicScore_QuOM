@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <style>
+    .cls { fill:#ffffff; stroke:#222222; stroke-width:1.6; rx:6; }
+    .title { font: bold 14px sans-serif; }
+    .attr { font: 12px monospace; }
+    .note { font: italic 11px sans-serif; fill:#444 }
+    .arrow { stroke:#222; stroke-width:1.4; fill:none; }
+    .dashed { stroke-dasharray:6 4; }
+  </style>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#fbfbfb" />
+
+  <!-- Note -->
+  <g transform="translate(40,40)">
+    <rect class="cls" width="220" height="110"/>
+    <text class="title" x="12" y="24">Note</text>
+    <text class="attr" x="12" y="48">+ frequency: float</text>
+    <text class="attr" x="12" y="66">+ start_time: float</text>
+    <text class="attr" x="12" y="84">+ duration: float</text>
+    <text class="attr" x="12" y="102">+ velocity: float</text>
+  </g>
+
+  <!-- AudioEffect (abstract) -->
+  <g transform="translate(320,40)">
+    <rect class="cls" width="220" height="70"/>
+    <text class="title" x="12" y="24">AudioEffect &lt;&lt;abstract&gt;&gt;</text>
+    <text class="attr" x="12" y="48">+ apply(buffer, sample_rate)</text>
+  </g>
+
+  <!-- DelayEffect -->
+  <g transform="translate(320,140)">
+    <rect class="cls" width="220" height="90"/>
+    <text class="title" x="12" y="26">DelayEffect</text>
+    <text class="attr" x="12" y="48">+ delay_seconds: float</text>
+    <text class="attr" x="12" y="66">+ decay: float</text>
+    <text class="attr" x="12" y="84">+ apply(buffer, sample_rate)</text>
+  </g>
+
+  <!-- DistortionEffect -->
+  <g transform="translate(320,260)">
+    <rect class="cls" width="220" height="70"/>
+    <text class="title" x="12" y="26">DistortionEffect</text>
+    <text class="attr" x="12" y="48">+ drive: float</text>
+  </g>
+
+  <!-- Synthesizer -->
+  <g transform="translate(640,40)">
+    <rect class="cls" width="320" height="150"/>
+    <text class="title" x="12" y="24">Synthesizer</text>
+    <text class="attr" x="12" y="48">+ sample_rate: int</text>
+    <text class="attr" x="12" y="66">+ oscillator: str</text>
+    <text class="attr" x="12" y="84">+ attack_time: float</text>
+    <text class="attr" x="12" y="102">+ release_time: float</text>
+    <text class="attr" x="12" y="120">+ effects: List&lt;AudioEffect&gt;</text>
+  </g>
+
+  <!-- Score -->
+  <g transform="translate(640,220)">
+    <rect class="cls" width="320" height="110"/>
+    <text class="title" x="12" y="24">Score</text>
+    <text class="attr" x="12" y="48">+ notes: List&lt;Note&gt;</text>
+    <text class="attr" x="12" y="66">+ name: str</text>
+    <text class="attr" x="12" y="84">+ synth: Synthesizer</text>
+    <text class="attr" x="12" y="102">+ add_note(note)</text>
+  </g>
+
+  <!-- SheetMusicPanel -->
+  <g transform="translate(40,200)">
+    <rect class="cls" width="260" height="140"/>
+    <text class="title" x="12" y="24">SheetMusicPanel &lt;&lt;Canvas&gt;&gt;</text>
+    <text class="attr" x="12" y="48">+ reference_beat: float</text>
+    <text class="attr" x="12" y="68">+ draw_melody(melody_string)</text>
+    <text class="attr" x="12" y="88">+ draw_single_note(...)</text>
+    <text class="attr" x="12" y="108">+ draw_vector_beam(stems)</text>
+  </g>
+
+  <!-- MidiToWavGUI -->
+  <g transform="translate(40,380)">
+    <rect class="cls" width="920" height="160"/>
+    <text class="title" x="12" y="26">MidiToWavGUI</text>
+    <text class="attr" x="12" y="48">+ root: Tk</text>
+    <text class="attr" x="12" y="66">+ midi_path: StringVar</text>
+    <text class="attr" x="12" y="84">+ oscillator: StringVar</text>
+    <text class="attr" x="12" y="102">+ last_generated_score: Score</text>
+    <text class="attr" x="12" y="120">+ start_processing_job(), _job_render_midi(), _job_render_melody()</text>
+  </g>
+
+  <!-- Inheritance arrows -->
+  <path class="arrow" d="M 420 110 L 420 140" marker-end="url(#tri)" />
+  <path class="arrow" d="M 420 230 L 420 260" marker-end="url(#tri)" />
+
+  <!-- Composition lines -->
+  <line class="arrow" x1="310" y1="95" x2="640" y2="95" /> <!-- AudioEffect -> Synthesizer (list) visual -->
+  <line class="arrow" x1="160" y1="150" x2="160" y2="220" /> <!-- Note -> SheetMusicPanel (uses) -->
+  <line class="arrow" x1="800" y1="170" x2="800" y2="220" /> <!-- Synthesizer -> Score -->
+  <line class="arrow dashed" x1="170" y1="340" x2="170" y2="380" /> <!-- GUI -> SheetMusicPanel -->
+  <line class="arrow" x1="420" y1="420" x2="640" y2="260" /> <!-- GUI -> extract_midi_data/Score (usage) -->
+
+  <!-- Arrow marker -->
+  <defs>
+    <marker id="tri" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#222" />
+    </marker>
+  </defs>
+
+  <!-- Small caption -->
+  <text class="note" x="40" y="570">Diagram: simplified class relationships for MusicScore_QuOM (Note, Synthesizer, Score, Effects, GUI, SheetMusicPanel)</text>
+  <text class="note" x="40" y="590">Generated: docs/architecture.puml → docs/architecture.svg (approximation)</text>
+
+</svg>
