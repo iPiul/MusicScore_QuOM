@@ -1,0 +1,91 @@
+@startuml
+' MusicScore_QuOM - Class Diagram (simplified)
+' Generated from repository analysis
+skinparam classAttributeIconSize 0
+
+class Note {
+  +frequency: float
+  +start_time: float
+  +duration: float
+  +velocity: float
+  +from_name(name, start_time, duration, velocity)
+  +parse_note(name)
+  +get_freq(name)
+  +midi_to_freq(midi_number)
+}
+
+abstract class AudioEffect {
+  +apply(buffer, sample_rate)
+}
+
+class DelayEffect {
+  +delay_seconds: float
+  +decay: float
+  +apply(buffer, sample_rate)
+}
+
+class DistortionEffect {
+  +drive: float
+  +apply(buffer, sample_rate)
+}
+
+class Synthesizer {
+  +sample_rate: int
+  +oscillator: string
+  +attack_time: float
+  +release_time: float
+  +effects: List<AudioEffect>
+  +add_effect(effect)
+  +render_track(notes)
+  +_mix_note(buffer, note)
+  +_buffer_to_bytes(float_buffer)
+}
+
+class Score {
+  +notes: List<Note>
+  +name: string
+  +synth: Synthesizer
+  +add_note(note)
+  +save_to_wav()
+}
+
+class SheetMusicPanel <<Canvas>> {
+  +reference_beat: float
+  +draw_staff()
+  +draw_melody(melody_string)
+  +draw_single_note(...)
+  +draw_vector_beam(stems)
+}
+
+class MidiToWavGUI {
+  +root
+  +midi_path
+  +oscillator
+  +melody_var
+  +last_generated_score
+  +start_processing_job()
+  +_job_render_midi()
+  +_job_render_melody()
+  +play_audio()
+  +open_visualizer()
+}
+
+note top of classDiagram: "Utility: extract_midi_data(midi_filename, instrument_name, attack, release, use_delay, use_distortion) -> Score"
+
+' Inheritance
+DelayEffect --|> AudioEffect
+DistortionEffect --|> AudioEffect
+
+' Composition / Aggregation
+Score *-- "*" Note : contains
+Score o-- Synthesizer : uses
+Synthesizer *-- "0..*" AudioEffect : effects
+
+' Usage / Calls
+MidiToWavGUI ..> SheetMusicPanel : draws
+MidiToWavGUI ..> extract_midi_data : calls
+MidiToWavGUI ..> Score : produces
+play_midi.extract_midi_data ..> Score
+SheetMusicPanel --|> Canvas
+
+@enduml
