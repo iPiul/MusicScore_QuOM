@@ -1,261 +1,179 @@
-# 🎵 MusicScore QuOM
+# MusicScore QuOM
 
-> **Transform MIDI files into custom synthesized audio with your choice of waveforms, effects, and visual music notation.**
+A from-scratch audio synthesis engine in Python. It reads standard MIDI files (or manual note input), runs them through a physics-based oscillator + ADSR envelope pipeline, and writes 16-bit PCM WAV files. There's also a Tkinter GUI with a sheet music renderer if you want to see what you're hearing.
 
-A Python synthesizer that reads MIDI files and generates WAV audio with customizable oscillators, ADSR envelopes, polyphonic mixing, and a visual sheet music display. Perfect for musicians, students, and audio enthusiasts exploring sound synthesis.
+Built as a Master 2 Physics project to explore the intersection of signal processing, OOP design, and musical acoustics — all without relying on audio libraries like `pygame` or `pydub`. The synthesis math is written by hand: `math.sin()`, `struct.pack()`, and a lot of sample-by-sample loops.
 
----
+## What it actually does
 
-## ✨ What Can You Do?
+- Parses `.mid` files (via `mido`) and converts MIDI events into `Note` objects with frequency, start time, and duration
+- Generates waveforms sample-by-sample at 44100 Hz using sine, square, or sawtooth oscillators
+- Applies a linear ADSR envelope (attack ramp-up, release fade-out) to prevent clicks and simulate acoustic damping
+- Mixes multiple simultaneous notes via additive synthesis (superposition — same principle as real sound waves)
+- Runs an optional effects chain: hard-clipping distortion then feedback delay (echo), in that order
+- Quantises the float mix buffer to 16-bit signed PCM and writes a valid WAV file header
+- Displays Western music notation on a Tkinter Canvas — note heads, stems, beams, ledger lines, accidentals
 
-- 🎹 **Convert MIDI to WAV** – Generate synthesized audio from any MIDI file
-- 🎛️ **Choose Your Sound** – Select from sine, square, or sawtooth waveforms
-- 🎚️ **Fine-Tune Parameters** – Adjust attack, release, distortion, and echo effects
-- 📊 **See & Hear Together** – Visualize melodies on a treble clef staff in real-time
-- 🎼 **Proper Music Notation** – Correct stem directions, note head styles, and beam grouping (following music theory)
-- 🎸 **Polyphonic Synthesis** – Mix multiple simultaneous notes seamlessly
+## Getting started
 
----
+You need Python 3.x and two packages:
 
-## 🚀 Quick Start (60 seconds)
-
-### Requirements
-- Python 3.x (e.g., Python 3.13)
-- Virtual environment (recommended)
-
-### Step 1: Install Dependencies
-From the project root directory:
 ```bash
 pip install mido matplotlib
 ```
 
-### Step 2: Test the Engine
-Generate a simple test WAV file:
+`mido` handles MIDI binary parsing. `matplotlib` is only used for the Piano Roll visualisation in the GUI — the core engine doesn't need it.
+
+**Quick test** — generate a C major chord as a WAV file:
+
 ```bash
 cd 1st_ver
 python music_engine.py
 ```
-✅ You should see: `Done! Saved test_mix.wav`
 
-### Step 3: Launch the GUI (Optional)
-Interactively create and synthesize melodies:
+This creates `test_mix.wav` (C4 + E4 + G4, arpeggiated over 2 seconds). If that works, the engine is good.
+
+**Launch the GUI:**
+
 ```bash
 python gui_enhance_test_khoa.py
 ```
-This opens a GUI with two tabs:
-- **MIDI Converter** – Load a `.mid` file and generate audio
-- **Acoustics Lab** – Type a melody (e.g., `C4:0.5 E4:0.5 G4:1.0`) and hear it instantly
 
----
+Two tabs:
+- **MIDI Converter** — browse for a `.mid` file, pick your oscillator and effects, hit Render
+- **Acoustics Lab** — type a melody like `C4:0.5 E4:0.5 G4:1.0`, see the sheet music update, render to WAV
 
-## 📁 Project Structure
+**Batch convert a MIDI file to all three waveforms:**
+
+```bash
+python play_midi.py
+```
+
+This reads `house_at_pooh_corner.mid` and outputs `_sine.wav`, `_square.wav`, and `_saw.wav` variants.
+
+## Project layout
 
 ```
 MusicScore_QuOM/
-├── README.md                        # This file
-├── house_at_pooh_corner.mid        # Example MIDI file
+├── README.md
+├── house_at_pooh_corner.mid         # sample MIDI for testing
 │
-├── 1st_ver/                         # Main source code
-│   ├── music_engine.py              # Core: Note, Synthesizer, Score classes
-│   ├── play_midi.py                 # MIDI parsing → audio synthesis
-│   ├── sheet_music.py               # Music notation & visualization
-│   ├── gui_enhance_test_khoa.py     # Main interactive GUI
-│   │
-│   └── examples/                    # Legacy/alternative implementations
-│       ├── gui.py                   # Simple basic GUI
-│       └── gui_staff.py             # Composer demo
+├── 1st_ver/
+│   ├── music_engine.py              # Note, Synthesizer, Score, AudioEffect classes
+│   ├── play_midi.py                 # MIDI parser → Score builder
+│   ├── sheet_music.py               # SheetMusicPanel (tk.Canvas subclass)
+│   ├── gui_enhance_test_khoa.py     # main GUI application
+│   └── examples/
+│       ├── gui.py                   # older minimal GUI (kept for reference)
+│       └── gui_staff.py             # early composer prototype
 │
-└── [Generated Files]
-    └── *.wav                        # Output audio files
+└── *.wav                            # generated output files (gitignored)
 ```
 
----
+## How the synthesis works
 
-## 🎯 How It Works (Beginner-Friendly)
+The core loop in `Synthesizer.render_track()` does this:
 
-```
-MIDI File
-    ↓
-[play_midi.py] ← Parse notes, timing, and velocity
-    ↓
-[Score Object] ← Organize notes onto a timeline
-    ↓
-[Synthesizer] ← Generate waveforms + apply ADSR envelope
-    ↓
-[Effect Rack] ← Optional: Distortion & Delay
-    ↓
-[Mixing] ← Combine all notes into one audio stream
-    ↓
-[WAV File] ← 16-bit PCM audio saved to disk
-```
+1. **Allocate a float buffer** — length = (last note end + release tail + 0.5s) × 44100 samples. Everything stays as floats during mixing to avoid premature clipping.
 
-### Key Classes Explained
+2. **For each Note, generate samples** — at every sample index `i`:
+   - Compute `t = i / 44100`
+   - Sine: `sin(2π × freq × t)`
+   - Square: `sign(sin(2π × freq × t))` — so +1 or -1
+   - Sawtooth: `2 × ((t × freq) mod 1) - 1` — linear ramp
 
-| Class | What It Does | Example |
-|-------|-------------|---------|
-| **Note** | Represents one musical note | `Note.from_name("C4", start_time=0, duration=0.5)` |
-| **Synthesizer** | Generates audio waveforms with effects | `synth.oscillator = "sine"`, `synth.add_effect(DelayEffect())` |
-| **Score** | Container for all notes + WAV export | `score.add_note(note)`, `score.save_to_wav()` |
-| **SheetMusicPanel** | Visual notation display (treble clef) | Drawn in GUI automatically |
+3. **Apply the ADSR envelope** — linear fade-in over the attack period, full amplitude in the middle, linear fade-out over the release period. This is what prevents the "click" you'd get from an instantaneous start.
 
----
+4. **Add to the mix buffer** — `buffer[start + i] += sample × envelope × velocity × volume_adjustment`. The `+=` is the superposition: multiple notes just add together, exactly like real pressure waves.
 
-## 🎮 Using the GUI
+5. **Run the effects chain** — distortion first (hard clip at `threshold = 1.0 - drive`, then renormalise), delay second (add `buffer[i - delay_samples] × decay` to the current sample).
 
-### Tab 1: MIDI Converter
-1. Click **"..."** to browse and select a `.mid` file
-2. Choose your waveform: Sine, Square, or Saw
-3. Adjust settings (attack, release, distortion, echo)
-4. Click **"▶ Generate WAV"**
-5. (Optional) Click **"📊 Piano Roll"** to see note distribution
-6. (Optional) Click **"♫ Play"** to hear the result
+6. **Quantise to PCM** — clamp each float to [-1.0, 1.0], multiply by 32767, pack as a little-endian signed 16-bit integer (`struct.pack('<h', value)`). Write the whole thing with Python's `wave` module.
 
-### Tab 2: Acoustics Lab
-1. In the text field, type a melody using this format:
-   ```
-   Note:Duration Note:Duration Note:Duration
-   ```
-   - **Note**: `C4`, `D4#`, `E4`, `Fab4`, etc. (English or Solfège names OK)
-   - **Duration**: Seconds (e.g., `0.5` = 500ms, `1.0` = 1 second)
-   
-2. Example: `C4:0.5 E4:0.5 G4:1.0 REST:0.25 C5:1.0`
-   - Plays C, then E, then G (longer), a silence, then high C
+The pitch calculation uses standard 12-tone equal temperament: `f = 440 × 2^((n - 57) / 12)` where `n` is the absolute semitone index (C0 = 0, A4 = 57). This is cached with `@lru_cache` so repeated notes don't recompute.
 
-3. See the sheet music update in real-time
-4. Click **"▶ Generate WAV"** to synthesize and save
+## The OOP structure (short version)
 
----
+**`Note`** (dataclass) — four fields: `frequency`, `start_time`, `duration`, `velocity`. Factory method `from_name("C#4")` handles the string-to-Hz conversion. Static methods wrap the module-level parsing/frequency utilities.
 
-## 📚 Learning Resources
+**`Synthesizer`** — holds the oscillator type, ADSR parameters, and an ordered list of `AudioEffect` objects. The `render_track(notes)` method is where all the physics happens.
 
-### Understanding Music Notation (in the output)
-- **Hollow (white) note heads** = long notes (half notes, whole notes)
-- **Filled (black) note heads** = short notes (quarter notes, eighths, sixteenths)
-- **Stems** = vertical lines extending from note heads
-  - **Up** = notes on or below middle line (B4)
-  - **Down** = notes above middle line (B4)
-- **Beams** = horizontal lines connecting multiple short notes (standard notation)
-- **Ledger lines** = small lines for notes outside the staff
+**`Score`** — container that owns a `list[Note]` and a `Synthesizer`. `save_to_wav()` triggers the render and writes the file. This is the object that gets passed around between the parser, the GUI, and the visualiser.
 
-### Sound Design Tips
-1. **Sine waves** = smooth, pure tone (default)
-2. **Square waves** = buzz-like, digital sound
-3. **Sawtooth waves** = bright, harsh sound
-4. **Attack (0.01s)** = sudden onset (plucked sound)
-5. **Release (0.1s)** = slow fade-out (piano sound)
-6. **Distortion** = adds harmonics (guitar-like tone)
-7. **Delay/Echo** = reverb effect (spacious feel)
+**`AudioEffect`** (abstract) → **`DelayEffect`**, **`DistortionEffect`** — polymorphism. The synthesizer just calls `effect.apply(buffer, sample_rate)` on each one without knowing the implementation. Adding a new effect means writing one class with one method.
 
-### Example Commands
+**`SheetMusicPanel`** (extends `tk.Canvas`) — maps notes to staff positions using a diatonic step system (C=0 through B=6, ignoring accidentals for Y placement). Determines note head shape from duration (hollow for half/whole, filled for quarter and shorter). Automatically beams consecutive eighth/sixteenth notes. Handles ledger lines for notes outside the staff.
+
+**`extract_midi_data()`** in `play_midi.py` — the controller function. Reads MIDI events, integrates delta times into absolute timestamps, pairs `note_on` with `note_off` to compute durations, builds and returns a `Score`.
+
+**`MidiToWavGUI`** — Tkinter app that ties everything together. Runs synthesis in a background daemon thread to keep the UI responsive. All UI updates from the worker thread go through `root.after()` because Tkinter is not thread-safe.
+
+## Volume levels and clipping
+
+Square and sawtooth waves have higher RMS energy than sine waves at the same amplitude. To keep things from clipping when you mix multiple notes, the engine applies different volume scaling:
+- Sine: 0.3
+- Square / Saw: 0.15
+
+If you're getting distorted output on dense MIDI files with lots of simultaneous notes, the mix buffer might be exceeding [-1, 1] before quantisation. The hard limiter in `_buffer_to_bytes()` clamps it, but you'll hear it. Lowering velocity or the volume adjustment constants would help.
+
+## Music theory notes (for the notation renderer)
+
+- B4 sits on the middle line of the treble staff. Notes on or below B4 get stems pointing up; notes above B4 get stems pointing down. This is standard engraving practice.
+- The `reference_beat` parameter (default 0.5s, i.e. 120 BPM) determines how durations map to note shapes: `duration / reference_beat` gives a coefficient. Coefficient 4 = whole note, 2 = half, 1 = quarter, 0.5 = eighth, 0.25 = sixteenth.
+- Consecutive beamable notes (eighth or shorter) are grouped and connected with polygon beams rather than individual flags. The beam renderer runs as a second pass after all note heads are drawn.
+- Solfège notation is supported throughout: Do, Re, Mi, Fa, Sol, La, Si (with accidentals like Sol#, Mib).
+
+## Known limitations
+
+- **Performance**: the synthesis loop is pure Python, sample-by-sample. A 90-second MIDI file with hundreds of notes takes a few seconds to render. Vectorising with NumPy would make it near-instant, but we wanted to keep the physics explicit and readable.
+- **Mono only**: single-channel output. No stereo panning.
+- **Linear ADSR**: real instruments have exponential attack/release curves. Ours is linear for simplicity.
+- **No sustain pedal**: MIDI sustain (CC64) messages are ignored. Notes end at their `note_off` event.
+- **Sheet music is basic**: no time signatures, bar lines, or key signatures. It renders a single melodic line on a treble clef.
+
+## If you want to test / review
+
 ```bash
-# Generate test audio with overlapping notes
-python 1st_ver/music_engine.py
+# 1. Engine sanity check
+cd 1st_ver
+python music_engine.py
+# → should produce test_mix.wav (C major chord)
 
-# Convert a MIDI file for all waveforms
-python 1st_ver/play_midi.py
+# 2. MIDI batch conversion
+python play_midi.py
+# → reads house_at_pooh_corner.mid, outputs 3 WAV variants
 
-# Run the GUI
-python 1st_ver/gui_enhance_test_khoa.py
+# 3. GUI
+python gui_enhance_test_khoa.py
+# → try Acoustics Lab with: C4:0.5 D4:0.5 E4:1.0 G4:2.0
+# → try loading a MIDI file in the MIDI Converter tab
+# → try toggling distortion + echo, changing oscillator type
 ```
 
----
+Things we'd appreciate feedback on:
+- Does the GUI flow make sense? Anything confusing?
+- How does the audio quality sound? Any unexpected clicks or artefacts?
+- Is the sheet music notation readable and correct?
+- Any crashes or error messages we should know about?
+- Ideas for features that would actually be useful?
 
-## 🔧 Technical Details
+## Troubleshooting
 
-### Time Units
-- **All times are in seconds** (floats)
-- MIDI timing is accumulated from delta-time to absolute time in `play_midi.py`
-- Reference beat (GUI tab 2) = 0.5 seconds = one quarter note at 120 BPM
+**"ModuleNotFoundError: No module named 'mido'"** — run `pip install mido`. If you're using a virtual environment, make sure it's activated.
 
-### Oscillator Volume
-Carefully tuned to prevent clipping:
-- Sine: 0.3 amplitude
-- Square/Saw: 0.15 amplitude
-- Adjust if mixing multiple layers
+**Audio sounds harsh or clipped** — this usually means too many notes are overlapping and the mix buffer is saturating. Try lowering velocity values or the `vol_adj` constants in `_mix_note()`.
 
-### Music Theory in Code
-- **B4** = treble clef middle line (step_diff = 4)
-- Stems UP for notes on/below B4; DOWN for above
-- Consecutive eighths/sixteenths auto-beam (via `draw_melody_with_beaming()`)
-- Accidentals (#, b) supported in all note names
+**GUI doesn't open** — make sure `matplotlib` and `tkinter` are installed. On some Linux distros, tkinter needs a separate package (`sudo apt install python3-tk`).
 
----
+**Sheet music looks wrong** — check that your melody format is correct: `NoteName:Duration` separated by spaces. Example: `C4:0.5 E4:0.5 G4:1.0`. The note name must end with an octave digit.
 
-## ✅ Recent Improvements
+**MIDI file produces no output** — the parser only handles `note_on` and `note_off` messages. If your MIDI file uses unusual control messages or has no standard note events, it might return an empty Score.
 
-- ✨ **Refactored Note class** to dataclass with `Note.from_name()` factory + caching
-- 🎵 **Fixed stem direction** to follow standard music theory
-- 📦 **Added beam grouping** for proper eighth/sixteenth notation
-- 🧹 **Removed dead code** (duplicate GUIs, unused imports)
-- 🎯 **Cleaner module organization** with helpers in `examples/`
+## What could come next
 
----
-
-## 🤝 Feedback & Contributing
-
-**We'd love your input!** Please test and let us know:
-- ✉️ Does the GUI feel intuitive?
-- 🔊 Does the audio sound good? Any distortion or clicks?
-- 🎼 Is the sheet music readable and accurate?
-- 🐛 Any bugs or crashes?
-- 💡 Feature requests?
-
-### Testing Checklist
-```bash
-# 1. Engine test (expects test_mix.wav)
-python 1st_ver/music_engine.py
-
-# 2. GUI test (load example MIDI)
-python 1st_ver/gui_enhance_test_khoa.py
-# → Try "Acoustics Lab" with: C4:0.5 D4:0.5 E4:1.0
-
-# 3. MIDI conversion (expect _sine.wav, _square.wav, _saw.wav)
-python 1st_ver/play_midi.py
-```
-
----
-
-## 📖 File Reference
-
-| File | Purpose | For Whom |
-|------|---------|----------|
-| `music_engine.py` | Core synthesis engine | Developers, sound designers |
-| `play_midi.py` | MIDI parsing + synthesis pipeline | Developers, batch processing |
-| `sheet_music.py` | Music notation rendering | Developers, UI fans |
-| `gui_enhance_test_khoa.py` | Interactive GUI | Everyone! 🎉 |
-| `examples/gui.py` | Simple alternative GUI | Reference/learning |
-
----
-
-## ❓ Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Audio sounds distorted/clipped | Lower oscillator volume in `music_engine.py` or reduce note velocity |
-| Hanging/stuck notes | Ensure all MIDI note_on have matching note_off |
-| GUI won't launch | Check `matplotlib` is installed: `pip install matplotlib` |
-| Sheet music looks wrong | Verify melody format: `C4:0.5 D4:0.5` (note name, colon, duration) |
-| File not found | Check working directory: `cd 1st_ver` before running scripts |
-
----
-
-## 📝 Next Steps & Ideas
-
-- 🎹 Real-time MIDI input from USB keyboard
-- 🎛️ Visual knobs for parameter control in GUI
-- 💾 Save/load synthesis presets
-- 🎵 Support for tempo/time signature changes
-- 🔗 Combine multiple synthesizers in one track
-- 🎤 Voice synthesis (experimental)
-
----
-
-## 📜 License
-
-This project is open for learning and experimentation. Please respect original MIDI compositions and artists when converting files.
-
----
-
-**Enjoy creating! 🎶**
-
-Questions? Found a bug? Have ideas? **Feedback is welcome!** Open an issue or reach out directly.
+- NumPy vectorisation for the synthesis loop (10-100x speedup)
+- FM synthesis and wavetable oscillators
+- FFT spectral analysis view alongside the Piano Roll
+- Stereo output with per-note panning
+- Real-time MIDI input from a USB keyboard
+- Preset save/load for synthesis configurations
